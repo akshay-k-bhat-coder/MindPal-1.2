@@ -31,8 +31,8 @@ export const supabase = createClient(
       fetch: (url, options = {}) => {
         return fetch(url, {
           ...options,
-          // Add timeout to prevent hanging requests
-          signal: AbortSignal.timeout(30000), // 30 second timeout
+          // Increase timeout to prevent hanging requests - changed from 30s to 60s
+          signal: AbortSignal.timeout(60000), // 60 second timeout
         });
       }
     },
