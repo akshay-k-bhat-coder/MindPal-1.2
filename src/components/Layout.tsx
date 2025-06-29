@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
+import { NotificationBell } from './notifications/NotificationBell';
 import toast from 'react-hot-toast';
 
 const FloatingIcon = ({ icon: Icon, delay }: { icon: any; delay: number }) => (
@@ -250,6 +251,9 @@ export function Layout() {
 
             {/* User Menu */}
             <div className="flex items-center space-x-4">
+              {/* Notification Bell */}
+              <NotificationBell />
+              
               <motion.div
                 className="text-sm text-white/80 hidden sm:block"
                 initial={{ opacity: 0 }}

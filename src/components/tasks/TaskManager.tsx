@@ -31,7 +31,7 @@ interface Task {
 
 export function TaskManager() {
   const { user } = useAuth();
-  const { scheduleTaskReminder } = useNotifications();
+  const { scheduleTaskReminder, markTaskComplete, scheduleOverdueReminder, scheduleAchievementNotification } = useNotifications();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [newTask, setNewTask] = useState({
     title: '',
@@ -102,7 +102,7 @@ export function TaskManager() {
       
       // Schedule reminder if enabled
       if (newTask.reminder_enabled && newTask.due_date) {
-        await scheduleTaskReminder(newTask.title, new Date(newTask.due_date));
+        await scheduleTaskReminder(data.id, newTask.title, new Date(newTask.due_date));
       }
       
       setNewTask({
@@ -114,7 +114,17 @@ export function TaskManager() {
         reminder_enabled: false,
       });
       setShowAddForm(false);
-      toast.success('Task added successfully!');
+      toast.success('Task added successfully! 📝');
+
+      // Check for achievements
+      const completedTasks = tasks.filter(t => t.completed).length;
+      if (completedTasks === 0 && tasks.length === 0) {
+        // First task created
+        await scheduleAchievementNotification(
+          'First Task Created',
+          'Great start! You\'ve created your first task. Keep building healthy habits!'
+        );
+      }
     } catch (error) {
       console.error('Error adding task:', error);
       toast.error('Failed to add task');
@@ -134,7 +144,32 @@ export function TaskManager() {
         task.id === taskId ? { ...task, completed: !completed } : task
       ));
       
-      toast.success(completed ? 'Task marked incomplete' : 'Task completed! 🎉');
+      if (!completed) {
+        // Task was just completed
+        await markTaskComplete(taskId);
+        toast.success('Task completed! 🎉');
+
+        // Check for completion achievements
+        const newCompletedCount = tasks.filter(t => t.completed).length + 1;
+        if (newCompletedCount === 1) {
+          await scheduleAchievementNotification(
+            'First Task Completed',
+            'Congratulations! You\'ve completed your first task. You\'re building momentum!'
+          );
+        } else if (newCompletedCount === 10) {
+          await scheduleAchievementNotification(
+            'Task Master',
+            'Amazing! You\'ve completed 10 tasks. You\'re developing great productivity habits!'
+          );
+        } else if (newCompletedCount % 25 === 0) {
+          await scheduleAchievementNotification(
+            'Productivity Champion',
+            `Incredible! You've completed ${newCompletedCount} tasks. Your dedication is inspiring!`
+          );
+        }
+      } else {
+        toast.success('Task marked incomplete');
+      }
     } catch (error) {
       console.error('Error updating task:', error);
       toast.error('Failed to update task');
@@ -158,10 +193,30 @@ export function TaskManager() {
     }
   };
 
+  // Check for overdue tasks and schedule reminders
+  useEffect(() => {
+    const checkOverdueTasks = () => {
+      const now = new Date();
+      tasks.forEach(task => {
+        if (!task.completed && task.due_date && new Date(task.due_date) < now) {
+          // Task is overdue, schedule reminder
+          scheduleOverdueReminder(task.id, task.title);
+        }
+      });
+    };
+
+    // Check every hour
+    const interval = setInterval(checkOverdueTasks, 60 * 60 * 1000);
+    checkOverdueTasks(); // Check immediately
+
+    return () => clearInterval(interval);
+  }, [tasks, scheduleOverdueReminder]);
+
   const filteredTasks = tasks.filter(task => {
     const matchesFilter = filter === 'all' || 
       (filter === 'completed' && task.completed) ||
-      (filter === 'pending' && !task.completed);
+      (filter === 'pending' && !task.completed) ||
+      (filter === 'overdue' && !task.completed && task.due_date && new Date(task.due_date) < new Date());
     
     const matchesSearch = task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (task.description && task.description.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -178,6 +233,12 @@ export function TaskManager() {
     }
   };
 
+  const getTaskStatus = (task: Task) => {
+    if (task.completed) return 'completed';
+    if (task.due_date && new Date(task.due_date) < new Date()) return 'overdue';
+    return 'pending';
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -186,6 +247,9 @@ export function TaskManager() {
     );
   }
 
+  const completedCount = tasks.filter(t => t.completed).length;
+  const overdueCount = tasks.filter(t => !t.completed && t.due_date && new Date(t.due_date) < new Date()).length;
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -193,6 +257,18 @@ export function TaskManager() {
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Task Manager</h1>
           <p className="text-gray-600 dark:text-gray-300">Stay organized with ADHD-friendly task management</p>
+          
+          {/* Quick Stats */}
+          <div className="flex items-center space-x-4 mt-2">
+            <span className="text-sm text-gray-500 dark:text-gray-400">
+              {tasks.length} total • {completedCount} completed
+            </span>
+            {overdueCount > 0 && (
+              <span className="text-sm text-red-600 dark:text-red-400 font-medium">
+                {overdueCount} overdue
+              </span>
+            )}
+          </div>
         </div>
         
         <motion.button
@@ -230,6 +306,7 @@ export function TaskManager() {
               <option value="all">All Tasks</option>
               <option value="pending">Pending</option>
               <option value="completed">Completed</option>
+              <option value="overdue">Overdue</option>
             </select>
           </div>
         </div>
@@ -353,77 +430,89 @@ export function TaskManager() {
       {/* Tasks List */}
       <div className="space-y-3">
         <AnimatePresence>
-          {filteredTasks.map((task) => (
-            <motion.div
-              key={task.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className={`bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-md transition-all duration-200 ${
-                task.completed ? 'opacity-75' : ''
-              }`}
-            >
-              <div className="flex items-start space-x-4">
-                <button
-                  onClick={() => toggleTask(task.id, task.completed)}
-                  className={`mt-1 ${task.completed ? 'text-green-600' : 'text-gray-400 hover:text-purple-600'} transition-colors duration-200`}
-                >
-                  {task.completed ? (
-                    <CheckSquare className="h-5 w-5" />
-                  ) : (
-                    <Square className="h-5 w-5" />
-                  )}
-                </button>
-                
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <h3 className={`font-semibold ${task.completed ? 'line-through text-gray-500' : 'text-gray-900 dark:text-white'}`}>
-                        {task.title}
-                      </h3>
-                      {task.description && (
-                        <p className={`text-sm mt-1 ${task.completed ? 'text-gray-400' : 'text-gray-600 dark:text-gray-300'}`}>
-                          {task.description}
-                        </p>
-                      )}
-                      
-                      <div className="flex items-center space-x-3 mt-3">
-                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${getPriorityColor(task.priority)}`}>
-                          <Flag className="h-3 w-3 mr-1" />
-                          {task.priority}
-                        </span>
+          {filteredTasks.map((task) => {
+            const status = getTaskStatus(task);
+            return (
+              <motion.div
+                key={task.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className={`bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border transition-all duration-200 hover:shadow-md ${
+                  task.completed 
+                    ? 'opacity-75 border-gray-100 dark:border-gray-700' 
+                    : status === 'overdue'
+                    ? 'border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-900/10'
+                    : 'border-gray-100 dark:border-gray-700'
+                }`}
+              >
+                <div className="flex items-start space-x-4">
+                  <button
+                    onClick={() => toggleTask(task.id, task.completed)}
+                    className={`mt-1 ${task.completed ? 'text-green-600' : 'text-gray-400 hover:text-purple-600'} transition-colors duration-200`}
+                  >
+                    {task.completed ? (
+                      <CheckSquare className="h-5 w-5" />
+                    ) : (
+                      <Square className="h-5 w-5" />
+                    )}
+                  </button>
+                  
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <h3 className={`font-semibold ${task.completed ? 'line-through text-gray-500' : 'text-gray-900 dark:text-white'}`}>
+                          {task.title}
+                        </h3>
+                        {task.description && (
+                          <p className={`text-sm mt-1 ${task.completed ? 'text-gray-400' : 'text-gray-600 dark:text-gray-300'}`}>
+                            {task.description}
+                          </p>
+                        )}
                         
-                        <span className="inline-flex items-center text-xs text-gray-500 dark:text-gray-400">
-                          {task.category}
-                        </span>
-                        
-                        {task.due_date && (
+                        <div className="flex items-center space-x-3 mt-3">
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${getPriorityColor(task.priority)}`}>
+                            <Flag className="h-3 w-3 mr-1" />
+                            {task.priority}
+                          </span>
+                          
                           <span className="inline-flex items-center text-xs text-gray-500 dark:text-gray-400">
-                            <Calendar className="h-3 w-3 mr-1" />
-                            {new Date(task.due_date).toLocaleDateString()}
+                            {task.category}
                           </span>
-                        )}
+                          
+                          {task.due_date && (
+                            <span className={`inline-flex items-center text-xs ${
+                              status === 'overdue' 
+                                ? 'text-red-600 dark:text-red-400 font-medium' 
+                                : 'text-gray-500 dark:text-gray-400'
+                            }`}>
+                              <Calendar className="h-3 w-3 mr-1" />
+                              {new Date(task.due_date).toLocaleDateString()}
+                              {status === 'overdue' && ' (Overdue)'}
+                            </span>
+                          )}
 
-                        {task.reminder_enabled && (
-                          <span className="inline-flex items-center text-xs text-purple-600 dark:text-purple-400">
-                            <Bell className="h-3 w-3 mr-1" />
-                            Reminder
-                          </span>
-                        )}
+                          {task.reminder_enabled && (
+                            <span className="inline-flex items-center text-xs text-purple-600 dark:text-purple-400">
+                              <Bell className="h-3 w-3 mr-1" />
+                              Reminder
+                            </span>
+                          )}
+                        </div>
                       </div>
+                      
+                      <button
+                        onClick={() => deleteTask(task.id)}
+                        className="text-gray-400 hover:text-red-500 transition-colors duration-200 ml-4"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     </div>
-                    
-                    <button
-                      onClick={() => deleteTask(task.id)}
-                      className="text-gray-400 hover:text-red-500 transition-colors duration-200 ml-4"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
                   </div>
                 </div>
-              </div>
-            </motion.div>
-          ))}
+              </motion.div>
+            );
+          })}
         </AnimatePresence>
       </div>
 
