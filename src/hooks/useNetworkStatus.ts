@@ -1,31 +1,34 @@
 import { useState, useEffect, useCallback } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase, isSupabaseConfigured } from '../lib/supabase'
 
 export const useNetworkStatus = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine)
-  const [isSupabaseConnected, setIsSupabaseConnected] = useState(true)
+  const [isSupabaseConnected, setIsSupabaseConnected] = useState(false)
   const [lastChecked, setLastChecked] = useState<Date | null>(null)
   const [isChecking, setIsChecking] = useState(false)
 
   // Improved Supabase connection test with better error handling
   const checkSupabaseConnection = useCallback(async (): Promise<boolean> => {
-    if (isChecking) return isSupabaseConnected
+    if (isChecking || !isSupabaseConfigured()) {
+      return isSupabaseConnected
+    }
     
     try {
       setIsChecking(true)
       
-      // Use a simple auth session check with timeout
+      // Use a simple auth session check with shorter timeout
       const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 5000)
+      const timeoutId = setTimeout(() => controller.abort(), 3000) // Reduced to 3 seconds
       
       const { error } = await supabase.auth.getSession()
       
       clearTimeout(timeoutId)
       
-      // Connection successful
-      setIsSupabaseConnected(true)
+      // Connection successful if no network errors
+      const isConnected = !error || !error.message?.includes('fetch')
+      setIsSupabaseConnected(isConnected)
       setLastChecked(new Date())
-      return true
+      return isConnected
     } catch (err: any) {
       console.warn('Supabase connection check failed:', err)
       
@@ -48,10 +51,10 @@ export const useNetworkStatus = () => {
     }
   }, [isChecking, isSupabaseConnected])
 
-  // Enhanced retry mechanism with exponential backoff
+  // Enhanced retry mechanism with exponential backoff and circuit breaker
   const withRetry = useCallback(async <T>(
     operation: () => Promise<T>,
-    maxRetries: number = 3,
+    maxRetries: number = 2, // Reduced default retries
     baseDelay: number = 1000
   ): Promise<T> => {
     let lastError: Error
@@ -62,12 +65,14 @@ export const useNetworkStatus = () => {
       } catch (error) {
         lastError = error as Error
         
-        // Don't retry on auth errors or client errors
+        // Don't retry on auth errors, client errors, or abort errors
         if (error instanceof Error && (
           error.message.includes('JWT') ||
           error.message.includes('401') ||
           error.message.includes('403') ||
-          error.message.includes('PGRST301')
+          error.message.includes('PGRST301') ||
+          error.name === 'AbortError' ||
+          error.message.includes('signal is aborted')
         )) {
           throw error
         }
@@ -78,7 +83,7 @@ export const useNetworkStatus = () => {
         }
 
         // Exponential backoff with jitter
-        const delay = baseDelay * Math.pow(2, attempt - 1) + Math.random() * 1000
+        const delay = baseDelay * Math.pow(2, attempt - 1) + Math.random() * 500
         await new Promise(resolve => setTimeout(resolve, delay))
       }
     }
@@ -91,7 +96,14 @@ export const useNetworkStatus = () => {
     const handleOnline = () => {
       console.log('Network: Back online')
       setIsOnline(true)
-      // Don't immediately assume Supabase is back - let the periodic check handle it
+      // Check Supabase connection after a delay
+      setTimeout(() => {
+        if (isSupabaseConfigured()) {
+          checkSupabaseConnection().catch(() => {
+            // Ignore errors
+          })
+        }
+      }, 2000)
     }
 
     const handleOffline = () => {
@@ -104,12 +116,14 @@ export const useNetworkStatus = () => {
     window.addEventListener('offline', handleOffline)
 
     // Initial connection check with delay
-    if (navigator.onLine) {
+    if (navigator.onLine && isSupabaseConfigured()) {
       setTimeout(() => {
         checkSupabaseConnection().catch(() => {
           // Ignore initial check errors
         })
-      }, 2000)
+      }, 1000)
+    } else {
+      setIsSupabaseConnected(false)
     }
 
     return () => {
@@ -118,9 +132,9 @@ export const useNetworkStatus = () => {
     }
   }, [checkSupabaseConnection])
 
-  // Periodic connection monitoring
+  // Periodic connection monitoring with circuit breaker
   useEffect(() => {
-    if (!isOnline) return
+    if (!isOnline || !isSupabaseConfigured()) return
 
     const interval = setInterval(() => {
       // Only check if we think we're disconnected or haven't checked recently
@@ -133,7 +147,7 @@ export const useNetworkStatus = () => {
           // Ignore periodic check errors
         })
       }
-    }, 120000) // Check every 2 minutes
+    }, 180000) // Check every 3 minutes (reduced frequency)
 
     return () => clearInterval(interval)
   }, [isOnline, isSupabaseConnected, lastChecked, isChecking, checkSupabaseConnection])

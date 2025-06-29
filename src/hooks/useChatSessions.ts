@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from './useAuth';
 import { useNetworkStatus } from './useNetworkStatus';
 import { useEncryption } from './useEncryption';
-import { supabase } from '../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import toast from 'react-hot-toast';
 
 interface ChatMessage {
@@ -39,7 +39,10 @@ export function useChatSessions() {
   const [loading, setLoading] = useState(true);
 
   const loadSessions = useCallback(async () => {
-    if (!user) return;
+    if (!user || !isSupabaseConfigured()) {
+      setLoading(false);
+      return;
+    }
 
     if (!isConnectedToSupabase) {
       setLoading(false);
@@ -48,26 +51,41 @@ export function useChatSessions() {
 
     try {
       const data = await withRetry(async () => {
-        const { data, error } = await supabase
-          .from('chat_sessions')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('updated_at', { ascending: false })
-          .limit(20);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-        if (error) {
-          const isJWTError = await handleSupabaseError(error);
-          if (!isJWTError) throw error;
-          return null;
+        try {
+          const { data, error } = await supabase
+            .from('chat_sessions')
+            .select('*')
+            .eq('user_id', user.id)
+            .order('updated_at', { ascending: false })
+            .limit(20)
+            .abortSignal(controller.signal);
+
+          clearTimeout(timeoutId);
+
+          if (error) {
+            const isJWTError = await handleSupabaseError(error);
+            if (!isJWTError) throw error;
+            return null;
+          }
+
+          return data;
+        } catch (error) {
+          clearTimeout(timeoutId);
+          throw error;
         }
-
-        return data;
-      });
+      }, 1, 2000); // Single retry with longer delay
 
       setSessions(data || []);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading chat sessions:', error);
-      if (isConnectedToSupabase) {
+      
+      // Don't show error for abort errors or network issues
+      if (!error.name?.includes('AbortError') && 
+          !error.message?.includes('signal is aborted') &&
+          isConnectedToSupabase) {
         toast.error('Failed to load chat sessions');
       }
     } finally {
@@ -76,37 +94,51 @@ export function useChatSessions() {
   }, [user, handleSupabaseError, withRetry, isConnectedToSupabase]);
 
   const loadMessages = useCallback(async (sessionId: string) => {
-    if (!user || !isConnectedToSupabase) return;
+    if (!user || !isSupabaseConfigured() || !isConnectedToSupabase) return;
 
     try {
       const data = await withRetry(async () => {
-        const { data, error } = await supabase
-          .from('chat_messages')
-          .select('*')
-          .eq('session_id', sessionId)
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: true });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-        if (error) {
-          const isJWTError = await handleSupabaseError(error);
-          if (!isJWTError) throw error;
-          return null;
+        try {
+          const { data, error } = await supabase
+            .from('chat_messages')
+            .select('*')
+            .eq('session_id', sessionId)
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: true })
+            .abortSignal(controller.signal);
+
+          clearTimeout(timeoutId);
+
+          if (error) {
+            const isJWTError = await handleSupabaseError(error);
+            if (!isJWTError) throw error;
+            return null;
+          }
+
+          return data;
+        } catch (error) {
+          clearTimeout(timeoutId);
+          throw error;
         }
-
-        return data;
-      });
+      }, 1, 2000);
 
       setMessages(data || []);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading messages:', error);
-      if (isConnectedToSupabase) {
+      
+      if (!error.name?.includes('AbortError') && 
+          !error.message?.includes('signal is aborted') &&
+          isConnectedToSupabase) {
         toast.error('Failed to load messages');
       }
     }
   }, [user, handleSupabaseError, withRetry, isConnectedToSupabase]);
 
   const createNewSession = async (title?: string) => {
-    if (!user || !isConnectedToSupabase) {
+    if (!user || !isSupabaseConfigured() || !isConnectedToSupabase) {
       if (!isConnectedToSupabase) {
         toast.error('Cannot create session - no connection to server');
       }
@@ -131,7 +163,7 @@ export function useChatSessions() {
         }
 
         return data;
-      });
+      }, 1, 2000);
 
       if (data) {
         const newSession = data;
@@ -142,16 +174,20 @@ export function useChatSessions() {
         toast.success('New chat session created!');
         return newSession;
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating session:', error);
-      toast.error('Failed to create new session');
+      
+      if (!error.name?.includes('AbortError') && 
+          !error.message?.includes('signal is aborted')) {
+        toast.error('Failed to create new session');
+      }
     }
     
     return null;
   };
 
   const addMessage = async (sessionId: string, messageType: 'user' | 'ai', content: string) => {
-    if (!user || !isConnectedToSupabase) {
+    if (!user || !isSupabaseConfigured() || !isConnectedToSupabase) {
       if (!isConnectedToSupabase) {
         toast.error('Cannot send message - no connection to server');
       }
@@ -178,7 +214,7 @@ export function useChatSessions() {
         }
 
         return data;
-      });
+      }, 1, 2000);
 
       if (data) {
         const newMessage = data;
@@ -195,16 +231,20 @@ export function useChatSessions() {
 
         return newMessage;
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding message:', error);
-      toast.error('Failed to save message');
+      
+      if (!error.name?.includes('AbortError') && 
+          !error.message?.includes('signal is aborted')) {
+        toast.error('Failed to save message');
+      }
     }
     
     return null;
   };
 
   const deleteSession = async (sessionId: string) => {
-    if (!user || !isConnectedToSupabase) {
+    if (!user || !isSupabaseConfigured() || !isConnectedToSupabase) {
       if (!isConnectedToSupabase) {
         toast.error('Cannot delete session - no connection to server');
       }
@@ -224,7 +264,7 @@ export function useChatSessions() {
           if (!isJWTError) throw error;
           return;
         }
-      });
+      }, 1, 2000);
 
       setSessions(prev => prev.filter(s => s.id !== sessionId));
       
@@ -234,14 +274,18 @@ export function useChatSessions() {
       }
 
       toast.success('Chat session deleted');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting session:', error);
-      toast.error('Failed to delete session');
+      
+      if (!error.name?.includes('AbortError') && 
+          !error.message?.includes('signal is aborted')) {
+        toast.error('Failed to delete session');
+      }
     }
   };
 
   const updateSessionTitle = async (sessionId: string, title: string) => {
-    if (!user || !isConnectedToSupabase) {
+    if (!user || !isSupabaseConfigured() || !isConnectedToSupabase) {
       if (!isConnectedToSupabase) {
         toast.error('Cannot update title - no connection to server');
       }
@@ -261,7 +305,7 @@ export function useChatSessions() {
           if (!isJWTError) throw error;
           return;
         }
-      });
+      }, 1, 2000);
 
       setSessions(prev => prev.map(s => 
         s.id === sessionId ? { ...s, title } : s
@@ -272,14 +316,18 @@ export function useChatSessions() {
       }
 
       toast.success('Session title updated');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating session title:', error);
-      toast.error('Failed to update title');
+      
+      if (!error.name?.includes('AbortError') && 
+          !error.message?.includes('signal is aborted')) {
+        toast.error('Failed to update title');
+      }
     }
   };
 
   const generateMoodReport = async (sessionId: string): Promise<MoodAnalysis | null> => {
-    if (!user || !isConnectedToSupabase) {
+    if (!user || !isSupabaseConfigured() || !isConnectedToSupabase) {
       if (!isConnectedToSupabase) {
         toast.error('Cannot generate report - no connection to server');
       }
@@ -302,7 +350,7 @@ export function useChatSessions() {
         }
 
         return data;
-      });
+      }, 1, 2000);
 
       const userMessages = messagesData?.filter(m => m.message_type === 'user') || [];
       const conversationText = userMessages.map(m => m.content).join(' ');
@@ -326,13 +374,17 @@ export function useChatSessions() {
           if (!isJWTError) throw error;
           return;
         }
-      });
+      }, 1, 2000);
 
       toast.success('Mood report generated!');
       return analysis;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error generating mood report:', error);
-      toast.error('Failed to generate mood report');
+      
+      if (!error.name?.includes('AbortError') && 
+          !error.message?.includes('signal is aborted')) {
+        toast.error('Failed to generate mood report');
+      }
       return null;
     }
   };
@@ -362,8 +414,10 @@ export function useChatSessions() {
   };
 
   useEffect(() => {
-    if (user) {
+    if (user && isSupabaseConfigured()) {
       loadSessions();
+    } else {
+      setLoading(false);
     }
   }, [user, loadSessions]);
 
