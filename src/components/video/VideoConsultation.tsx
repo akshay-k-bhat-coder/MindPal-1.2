@@ -18,7 +18,8 @@ import {
   AlertTriangle,
   Trash2,
   FileText,
-  BarChart3
+  BarChart3,
+  X
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useSettings } from '../../hooks/useSettings';
