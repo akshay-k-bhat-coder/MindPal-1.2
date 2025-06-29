@@ -13,21 +13,12 @@ import {
   Wifi,
   WifiOff,
   Shield,
-  RefreshCw,
-  AlertTriangle,
-  Trash2,
-  FileText,
-  BarChart3,
-  X,
-  Maximize,
-  Minimize
+  RefreshCw
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useSettings } from '../../hooks/useSettings';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { useTavusVideo } from '../../hooks/useTavusVideo';
-import { useSessionReports } from '../../hooks/useSessionReports';
-import { SessionReportModal } from '../reports/SessionReportModal';
 import toast from 'react-hot-toast';
 import Modal from 'react-modal';
 
@@ -43,35 +34,20 @@ export function VideoConsultation() {
     endSession,
     isLoading,
     error: tavusError,
-    formatDuration,
-    forceEndLingeringSession,
-    isForceEndingSession
+    formatDuration
   } = useTavusVideo();
-  const { reports, currentReport, loadSessionReports, setCurrentReport } = useSessionReports();
 
   const [isVideoEnabled, setIsVideoEnabled] = useState(true);
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [selectedPersonality, setSelectedPersonality] = useState(settings.ai_personality);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [mediaPermissionError, setMediaPermissionError] = useState<string | null>(null);
   const [showPermissionModal, setShowPermissionModal] = useState(false);
-  const [showReportModal, setShowReportModal] = useState(false);
-  const [showReportsHistory, setShowReportsHistory] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const maxSessionTime = 3600; // 60 minutes for all users
   const timeRemaining = Math.max(0, maxSessionTime - sessionDuration);
-
-  // Check if the error is about an active session
-  const isActiveSessionError = tavusError && tavusError.includes('already have an active video session');
-
-  // Load session reports on component mount
-  useEffect(() => {
-    loadSessionReports();
-  }, [loadSessionReports]);
 
   // Default replica ID - this should be configured based on personality
   const getReplicaId = (personality: string) => {
@@ -166,11 +142,8 @@ export function VideoConsultation() {
       cleanupLocalStream();
       
       const replicaId = getReplicaId(selectedPersonality);
-      const success = await startSession(replicaId, maxSessionTime);
-      
-      if (success) {
-        toast.success('Video consultation started!');
-      }
+      await startSession(replicaId, maxSessionTime);
+      toast.success('Video consultation started!');
     } catch (error) {
       console.error('Failed to start session:', error);
       toast.error('Failed to start video session');
@@ -183,15 +156,6 @@ export function VideoConsultation() {
     try {
       await endSession();
       toast.success('Video consultation ended');
-      
-      // Show the latest report after a short delay
-      setTimeout(() => {
-        if (reports.length > 0) {
-          setCurrentReport(reports[0]);
-          setShowReportModal(true);
-        }
-      }, 2000);
-      
       // Re-initialize local video after session ends
       setTimeout(() => {
         initializeLocalVideo();
@@ -199,16 +163,6 @@ export function VideoConsultation() {
     } catch (error) {
       console.error('Failed to end session:', error);
       toast.error('Failed to end session properly');
-    }
-  };
-
-  const handleForceEndLingering = async () => {
-    const success = await forceEndLingeringSession();
-    if (success) {
-      // Clear the error after successfully clearing lingering sessions
-      setTimeout(() => {
-        // The error will be cleared when the user tries to start a new session
-      }, 1000);
     }
   };
 
@@ -263,16 +217,6 @@ export function VideoConsultation() {
         }
       }
     }, 500);
-  };
-
-  const handleViewReport = (report: any) => {
-    setCurrentReport(report);
-    setShowReportModal(true);
-    setShowReportsHistory(false);
-  };
-
-  const toggleFullscreen = () => {
-    setIsFullscreen(!isFullscreen);
   };
 
   const personalities = [
@@ -346,32 +290,16 @@ export function VideoConsultation() {
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className={`bg-black rounded-2xl overflow-hidden relative transition-all duration-300 ${
-              isFullscreen ? 'fixed inset-4 z-50' : 'aspect-video'
-            }`}
+            className="bg-black rounded-2xl overflow-hidden aspect-video relative"
           >
-            {/* AI Video Stream - Embedded directly */}
+            {/* AI Video Stream */}
             {isSessionActive && sessionData?.session_url ? (
-              <div className="w-full h-full relative">
-                <iframe
-                  ref={iframeRef}
-                  src={sessionData.session_url}
-                  className="w-full h-full border-0"
-                  allow="camera; microphone; autoplay; encrypted-media; fullscreen"
-                  allowFullScreen
-                  title="AI Video Consultation"
-                  sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals"
-                />
-                
-                {/* Fullscreen Toggle */}
-                <button
-                  onClick={toggleFullscreen}
-                  className="absolute top-4 right-4 bg-black/50 hover:bg-black/70 text-white p-2 rounded-lg transition-colors duration-200"
-                  title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
-                >
-                  {isFullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
-                </button>
-              </div>
+              <iframe
+                src={sessionData.session_url}
+                className="w-full h-full"
+                allow="camera; microphone"
+                title="AI Video Consultation"
+              />
             ) : (
               <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-900 to-blue-900">
                 <div className="text-center text-white">
@@ -483,14 +411,6 @@ export function VideoConsultation() {
             >
               <Settings className="h-5 w-5" />
             </button>
-
-            <button
-              onClick={() => setShowReportsHistory(true)}
-              className="p-3 rounded-full bg-blue-200 dark:bg-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-300 dark:hover:bg-blue-600 transition-all duration-200"
-              title="Session Reports"
-            >
-              <BarChart3 className="h-5 w-5" />
-            </button>
           </div>
         </div>
 
@@ -559,32 +479,6 @@ export function VideoConsultation() {
                   </span>
                 </div>
               )}
-
-              <div className="flex justify-between items-center">
-                <span className="text-gray-600 dark:text-gray-400">Total Reports:</span>
-                <span className="font-medium text-gray-900 dark:text-white">
-                  {reports.length}
-                </span>
-              </div>
-            </div>
-          </motion.div>
-
-          {/* Browser Compatibility Notice */}
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.2 }}
-            className="bg-blue-50 dark:bg-blue-900/20 rounded-2xl p-6 border border-blue-200 dark:border-blue-800"
-          >
-            <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-300 mb-3 flex items-center space-x-2">
-              <AlertTriangle className="h-5 w-5" />
-              <span>Video Session</span>
-            </h3>
-            <div className="space-y-2 text-sm text-blue-800 dark:text-blue-400">
-              <p>• Video sessions are embedded directly in the app</p>
-              <p>• Grant camera and microphone permissions when prompted</p>
-              <p>• Use Chrome, Firefox, or Safari for best compatibility</p>
-              <p>• Ensure stable internet connection for smooth experience</p>
             </div>
           </motion.div>
 
@@ -592,11 +486,11 @@ export function VideoConsultation() {
           <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.3 }}
-            className="bg-green-50 dark:bg-green-900/20 rounded-2xl p-6 border border-green-200 dark:border-green-800"
+            transition={{ delay: 0.2 }}
+            className="bg-blue-50 dark:bg-blue-900/20 rounded-2xl p-6 border border-blue-200 dark:border-blue-800"
           >
-            <h3 className="text-lg font-semibold text-green-900 dark:text-green-300 mb-3">Tips for Better Sessions</h3>
-            <ul className="space-y-2 text-sm text-green-800 dark:text-green-400">
+            <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-300 mb-3">Tips for Better Sessions</h3>
+            <ul className="space-y-2 text-sm text-blue-800 dark:text-blue-400">
               <li>• Ensure good lighting on your face</li>
               <li>• Use headphones for better audio quality</li>
               <li>• Find a quiet, private space</li>
@@ -614,120 +508,15 @@ export function VideoConsultation() {
           animate={{ opacity: 1, y: 0 }}
           className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4"
         >
-          <div className="flex items-start space-x-3">
-            <Shield className="h-5 w-5 text-red-600 dark:text-red-400 mt-1" />
-            <div className="flex-1">
+          <div className="flex items-center space-x-3">
+            <Shield className="h-5 w-5 text-red-600 dark:text-red-400" />
+            <div>
               <p className="font-medium text-red-800 dark:text-red-300">Session Error</p>
-              <p className="text-sm text-red-700 dark:text-red-400 mb-3">{tavusError}</p>
-              
-              {/* Show clear lingering sessions button for active session errors */}
-              {isActiveSessionError && (
-                <button
-                  onClick={handleForceEndLingering}
-                  disabled={isForceEndingSession}
-                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200 flex items-center space-x-2 disabled:opacity-50"
-                >
-                  {isForceEndingSession ? (
-                    <RefreshCw className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Trash2 className="h-4 w-4" />
-                  )}
-                  <span>{isForceEndingSession ? 'Clearing...' : 'Clear Lingering Sessions'}</span>
-                </button>
-              )}
+              <p className="text-sm text-red-700 dark:text-red-400">{tavusError}</p>
             </div>
           </div>
         </motion.div>
       )}
-
-      {/* Session Reports History Modal */}
-      <Modal
-        isOpen={showReportsHistory}
-        onRequestClose={() => setShowReportsHistory(false)}
-        className="fixed inset-0 flex items-center justify-center z-50"
-        overlayClassName="fixed inset-0 bg-black bg-opacity-50 z-40"
-        ariaHideApp={false}
-      >
-        <div className="bg-white dark:bg-gray-900 rounded-2xl p-8 max-w-4xl w-full max-h-[80vh] overflow-y-auto shadow-xl">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center space-x-2">
-              <FileText className="h-6 w-6 text-blue-600" />
-              <span>Session Reports History</span>
-            </h2>
-            <button
-              onClick={() => setShowReportsHistory(false)}
-              className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-            >
-              <X className="h-6 w-6" />
-            </button>
-          </div>
-
-          {reports.length === 0 ? (
-            <div className="text-center py-12">
-              <FileText className="h-16 w-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No Reports Yet</h3>
-              <p className="text-gray-500 dark:text-gray-400">
-                Complete a video session to generate your first report
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {reports.map((report) => (
-                <div
-                  key={report.id}
-                  className="bg-gray-50 dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-600 transition-colors duration-200 cursor-pointer"
-                  onClick={() => handleViewReport(report)}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-3 mb-2">
-                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                          Session Report
-                        </h3>
-                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${
-                          report.insights.session_quality === 'excellent' ? 'text-green-600 bg-green-50 border-green-200 dark:bg-green-900/20 dark:text-green-400' :
-                          report.insights.session_quality === 'good' ? 'text-blue-600 bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400' :
-                          report.insights.session_quality === 'fair' ? 'text-yellow-600 bg-yellow-50 border-yellow-200 dark:bg-yellow-900/20 dark:text-yellow-400' :
-                          'text-orange-600 bg-orange-50 border-orange-200 dark:bg-orange-900/20 dark:text-orange-400'
-                        }`}>
-                          {report.insights.session_quality}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                        <div>
-                          <p className="text-gray-600 dark:text-gray-400">Duration</p>
-                          <p className="font-medium text-gray-900 dark:text-white">{report.report_data.duration_formatted}</p>
-                        </div>
-                        <div>
-                          <p className="text-gray-600 dark:text-gray-400">Engagement</p>
-                          <p className="font-medium text-gray-900 dark:text-white">{report.insights.engagement_level}</p>
-                        </div>
-                        <div>
-                          <p className="text-gray-600 dark:text-gray-400">Mood</p>
-                          <p className="font-medium text-gray-900 dark:text-white">{report.mood_analysis.overall_sentiment}</p>
-                        </div>
-                        <div>
-                          <p className="text-gray-600 dark:text-gray-400">Generated</p>
-                          <p className="font-medium text-gray-900 dark:text-white">
-                            {new Date(report.generated_at).toLocaleDateString()}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </Modal>
-
-      {/* Session Report Modal */}
-      <SessionReportModal
-        isOpen={showReportModal}
-        onClose={() => setShowReportModal(false)}
-        report={currentReport}
-      />
 
       {/* Permission Modal */}
       <Modal
