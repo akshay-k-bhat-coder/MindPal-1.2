@@ -449,7 +449,7 @@ export function useNotifications() {
           .from('task_notification_settings')
           .select('*')
           .eq('user_id', user.id)
-          .single();
+          .maybeSingle();
 
         if (error) {
           const isJWTError = await handleSupabaseError(error);
