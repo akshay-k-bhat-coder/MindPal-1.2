@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from './useAuth';
 import { useNetworkStatus } from './useNetworkStatus';
-import { supabase } from '../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import toast from 'react-hot-toast';
 
 export interface UserSettings {
@@ -52,17 +52,22 @@ export function useSettings() {
   }, []);
 
   const loadSettings = useCallback(async () => {
-    if (!user) {
-      setLoading(false);
-      // Apply default theme when no user
+    // If no user or Supabase not configured, use defaults
+    if (!user || !isSupabaseConfigured()) {
+      setSettings(defaultSettings);
       applyTheme(defaultSettings.theme);
+      setLoading(false);
+      
+      if (!isSupabaseConfigured()) {
+        console.warn('Supabase not configured, using default settings');
+      }
       return;
     }
 
+    // If not connected to Supabase, use current settings
     if (!isConnectedToSupabase) {
-      setLoading(false);
-      // Apply current settings theme when offline
       applyTheme(settings.theme);
+      setLoading(false);
       return;
     }
 
@@ -75,13 +80,20 @@ export function useSettings() {
           .maybeSingle();
 
         if (error) {
+          // Handle specific Supabase errors
+          if (error.message?.includes('fetch') || 
+              error.message?.includes('network') ||
+              error.message?.includes('timeout')) {
+            throw new Error('Network connection failed');
+          }
+          
           const isJWTError = await handleSupabaseError(error);
           if (!isJWTError) throw error;
           return null;
         }
 
         return data;
-      }, 3, 1000);
+      }, 2, 1000); // Reduced retries for faster fallback
 
       if (data) {
         const loadedSettings: UserSettings = {
@@ -104,19 +116,24 @@ export function useSettings() {
         if (!creatingDefaults && !saving) {
           await createDefaultSettings();
         } else {
-          // Apply default theme if we can't create settings
           setSettings(defaultSettings);
           applyTheme(defaultSettings.theme);
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading settings:', error);
-      // Apply default settings on error
+      
+      // Use default settings on any error
       setSettings(defaultSettings);
       applyTheme(defaultSettings.theme);
       
-      if (isConnectedToSupabase) {
-        toast.error('Failed to load settings, using defaults');
+      // Only show error toast if we're connected (to avoid spam when offline)
+      if (isConnectedToSupabase && isSupabaseConfigured()) {
+        if (error.message?.includes('Network connection failed')) {
+          toast.error('Unable to connect to server. Using default settings.');
+        } else {
+          toast.error('Failed to load settings, using defaults');
+        }
       }
     } finally {
       setLoading(false);
@@ -124,7 +141,12 @@ export function useSettings() {
   }, [user, handleSupabaseError, creatingDefaults, saving, withRetry, isConnectedToSupabase, applyTheme, settings.theme]);
 
   const createDefaultSettings = async () => {
-    if (!user || creatingDefaults || !isConnectedToSupabase) return;
+    if (!user || creatingDefaults || !isConnectedToSupabase || !isSupabaseConfigured()) {
+      // Fallback to local defaults
+      setSettings(defaultSettings);
+      applyTheme(defaultSettings.theme);
+      return;
+    }
 
     try {
       setCreatingDefaults(true);
@@ -140,22 +162,33 @@ export function useSettings() {
           });
 
         if (error) {
+          if (error.message?.includes('fetch') || 
+              error.message?.includes('network') ||
+              error.message?.includes('timeout')) {
+            throw new Error('Network connection failed');
+          }
+          
           const isJWTError = await handleSupabaseError(error);
           if (!isJWTError) throw error;
           return;
         }
-      }, 3, 1000);
+      }, 2, 1000);
       
       setSettings(defaultSettings);
       applyTheme(defaultSettings.theme);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating default settings:', error);
+      
       // Still apply defaults locally
       setSettings(defaultSettings);
       applyTheme(defaultSettings.theme);
       
-      if (isConnectedToSupabase) {
-        toast.error('Failed to create default settings');
+      if (isConnectedToSupabase && isSupabaseConfigured()) {
+        if (error.message?.includes('Network connection failed')) {
+          toast.error('Unable to connect to server. Settings saved locally.');
+        } else {
+          toast.error('Failed to create default settings');
+        }
       }
     } finally {
       setCreatingDefaults(false);
@@ -163,11 +196,6 @@ export function useSettings() {
   };
 
   const updateSettings = async (newSettings: Partial<UserSettings>) => {
-    if (!user) {
-      toast.error('Please sign in to save settings');
-      return;
-    }
-
     const updatedSettings = { ...settings, ...newSettings };
     
     // Apply theme immediately for better UX
@@ -177,6 +205,16 @@ export function useSettings() {
     
     // Update local state immediately
     setSettings(updatedSettings);
+
+    // If no user or Supabase not configured, only save locally
+    if (!user || !isSupabaseConfigured()) {
+      if (!isSupabaseConfigured()) {
+        toast.success('Settings saved locally (Supabase not configured)');
+      } else {
+        toast.error('Please sign in to save settings');
+      }
+      return;
+    }
 
     if (!isConnectedToSupabase) {
       toast.error('Settings saved locally. Will sync when connection is restored.');
@@ -198,21 +236,32 @@ export function useSettings() {
           });
 
         if (error) {
+          if (error.message?.includes('fetch') || 
+              error.message?.includes('network') ||
+              error.message?.includes('timeout')) {
+            throw new Error('Network connection failed');
+          }
+          
           const isJWTError = await handleSupabaseError(error);
           if (!isJWTError) throw error;
           return;
         }
-      }, 3, 1000);
+      }, 2, 1000);
       
       toast.success('Settings saved successfully!');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating settings:', error);
-      toast.error('Failed to save settings. Please try again.');
       
-      // Revert local changes on error
-      setSettings(settings);
-      if (newSettings.theme) {
-        applyTheme(settings.theme);
+      if (error.message?.includes('Network connection failed')) {
+        toast.error('Unable to connect to server. Settings saved locally.');
+      } else {
+        toast.error('Failed to save settings. Please try again.');
+        
+        // Revert local changes on non-network errors
+        setSettings(settings);
+        if (newSettings.theme) {
+          applyTheme(settings.theme);
+        }
       }
     } finally {
       setSaving(false);
@@ -220,13 +269,7 @@ export function useSettings() {
   };
 
   useEffect(() => {
-    if (user) {
-      loadSettings();
-    } else {
-      setLoading(false);
-      setSettings(defaultSettings);
-      applyTheme(defaultSettings.theme);
-    }
+    loadSettings();
   }, [user, loadSettings]);
 
   // Listen for system theme changes when auto mode is enabled
