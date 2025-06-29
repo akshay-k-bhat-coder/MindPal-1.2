@@ -282,6 +282,15 @@ export function Dashboard() {
 
   return (
     <div className="space-y-8 relative">
+      {/* White Circle Badge */}
+      <div className="absolute top-0 right-0 z-10">
+        <img 
+          src="/white_circle_360x360.svg" 
+          alt="Badge" 
+          className="w-24 h-24 -mt-12 -mr-6"
+        />
+      </div>
+
       {/* Parallax Background Elements */}
       <motion.div
         className="absolute inset-0 pointer-events-none"
