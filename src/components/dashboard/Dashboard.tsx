@@ -1,688 +1,309 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { motion, useScroll, useTransform, AnimatePresence } from 'framer-motion';
+import React, { useState, useEffect } from 'react'
+import { useAuth } from '../../hooks/useAuth'
+import { useNetworkStatus } from '../../hooks/useNetworkStatus'
+import { supabase } from '../../lib/supabase'
 import { 
-  CheckSquare, 
+  Brain, 
+  Calendar, 
   Heart, 
-  Mic, 
-  Brain,
+  MessageSquare, 
+  Video, 
   TrendingUp,
-  Target,
-  Award,
-  ExternalLink,
-  Plus,
-  Bell,
+  AlertCircle,
+  Wifi,
   WifiOff,
-  AlertTriangle,
-  Sparkles,
-  Zap,
-  Star,
-  Rocket,
-  Crown
-} from 'lucide-react';
-import { useAuth } from '../../hooks/useAuth';
-import { useNetworkStatus } from '../../hooks/useNetworkStatus';
-import { useNotifications } from '../../hooks/useNotifications';
-import { supabase } from '../../lib/supabase';
-import { format } from 'date-fns';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import toast from 'react-hot-toast';
+  RefreshCw
+} from 'lucide-react'
 
-const FloatingElement = ({ children, delay }: { children: React.ReactNode; delay: number }) => (
-  <motion.div
-    initial={{ y: 20, opacity: 0 }}
-    animate={{ y: 0, opacity: 1 }}
-    transition={{ delay, duration: 0.6, ease: "easeOut" }}
-    whileHover={{ y: -5, transition: { duration: 0.2 } }}
-  >
-    {children}
-  </motion.div>
-);
+interface DashboardStats {
+  totalSessions: number
+  completedTasks: number
+  moodEntries: number
+  avgMood: number
+}
 
-export function Dashboard() {
-  const { user, handleSupabaseError } = useAuth();
-  const { isOnline, isConnectedToSupabase } = useNetworkStatus();
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const { scrollY } = useScroll();
-  const { 
-    scheduleMoodReminder, 
-    scheduleDailySummary, 
-    requestNotificationPermission,
-    permission 
-  } = useNotifications();
-  
-  const [stats, setStats] = useState({
-    totalTasks: 0,
+export const Dashboard: React.FC = () => {
+  const { user } = useAuth()
+  const { isOnline, isSupabaseConnected, checkConnection } = useNetworkStatus()
+  const [stats, setStats] = useState<DashboardStats>({
+    totalSessions: 0,
     completedTasks: 0,
-    todayMood: null as number | null,
-    voiceSessions: 0,
-  });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [dataLoaded, setDataLoaded] = useState(false);
+    moodEntries: 0,
+    avgMood: 0
+  })
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  const parallaxY = useTransform(scrollY, [0, 500], [0, -150]);
-  const parallaxOpacity = useTransform(scrollY, [0, 300], [1, 0.3]);
-
-  // Handle payment success/cancel from URL params
-  useEffect(() => {
-    const success = searchParams.get('success');
-    const canceled = searchParams.get('canceled');
-    
-    if (success === 'true') {
-      toast.success('Welcome to MindPal! 🎉');
-      window.history.replaceState({}, '', '/dashboard');
-    } else if (canceled === 'true') {
-      toast.error('Action was canceled. You can try again anytime.');
-      window.history.replaceState({}, '', '/dashboard');
-    }
-  }, [searchParams]);
-
-  const loadStats = useCallback(async () => {
-    if (!user || dataLoaded) return;
-
-    if (!isConnectedToSupabase) {
-      setLoading(false);
-      setError('No connection to server');
-      return;
+  const fetchDashboardStats = async () => {
+    if (!user || !isSupabaseConnected) {
+      setLoading(false)
+      return
     }
 
     try {
-      setError(null);
-      
-      // Load data sequentially to avoid overwhelming the connection
-      console.log('Loading dashboard stats...');
-      
-      // Load tasks data
-      const { data: taskData, error: taskError } = await supabase
-        .from('tasks')
-        .select('completed')
-        .eq('user_id', user.id)
-        .limit(100); // Limit to prevent large queries
+      setError(null)
+      setLoading(true)
 
-      if (taskError) {
-        const isJWTError = await handleSupabaseError(taskError);
-        if (!isJWTError) {
-          console.error('Task loading error:', taskError);
-          throw new Error('Failed to load tasks');
-        }
-        return;
+      // Fetch video sessions count
+      const { count: sessionsCount, error: sessionsError } = await supabase
+        .from('video_sessions')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+
+      if (sessionsError) {
+        console.error('Error fetching sessions:', sessionsError)
       }
 
-      // Small delay to prevent request flooding
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Fetch completed tasks count
+      const { count: tasksCount, error: tasksError } = await supabase
+        .from('tasks')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('completed', true)
 
-      // Load mood data
-      const today = new Date().toISOString().split('T')[0];
+      if (tasksError) {
+        console.error('Error fetching tasks:', tasksError)
+      }
+
+      // Fetch mood entries
       const { data: moodData, error: moodError } = await supabase
         .from('mood_entries')
         .select('mood')
         .eq('user_id', user.id)
-        .gte('created_at', today)
-        .order('created_at', { ascending: false })
-        .limit(1);
 
       if (moodError) {
-        const isJWTError = await handleSupabaseError(moodError);
-        if (!isJWTError) {
-          console.error('Mood loading error:', moodError);
-          // Don't throw, just log the error
-        }
+        console.error('Error fetching mood entries:', moodError)
       }
 
-      // Small delay to prevent request flooding
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // Load voice sessions data
-      const { data: voiceData, error: voiceError } = await supabase
-        .from('chat_sessions')
-        .select('id')
-        .eq('user_id', user.id)
-        .limit(50); // Limit to prevent large queries
-
-      if (voiceError) {
-        const isJWTError = await handleSupabaseError(voiceError);
-        if (!isJWTError) {
-          console.error('Voice sessions loading error:', voiceError);
-          // Don't throw, just log the error
-        }
-      }
+      const moodEntries = moodData?.length || 0
+      const avgMood = moodData?.length 
+        ? moodData.reduce((sum, entry) => sum + entry.mood, 0) / moodData.length 
+        : 0
 
       setStats({
-        totalTasks: taskData?.length || 0,
-        completedTasks: taskData?.filter(task => task.completed).length || 0,
-        todayMood: moodData?.[0]?.mood || null,
-        voiceSessions: voiceData?.length || 0,
-      });
-
-      setDataLoaded(true);
-      console.log('Dashboard stats loaded successfully');
-    } catch (error) {
-      console.error('Error loading stats:', error);
-      setError('Some data may not be up to date');
+        totalSessions: sessionsCount || 0,
+        completedTasks: tasksCount || 0,
+        moodEntries,
+        avgMood: Math.round(avgMood * 10) / 10
+      })
+    } catch (err) {
+      console.error('Error fetching dashboard stats:', err)
+      setError('Failed to load dashboard data. Please check your connection.')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  }, [user, handleSupabaseError, isConnectedToSupabase, dataLoaded]);
+  }
 
   useEffect(() => {
-    if (user && !dataLoaded) {
-      loadStats();
-      if (permission === 'default') {
-        requestNotificationPermission().catch(console.warn);
-      }
-    } else if (!user) {
-      setLoading(false);
-      setDataLoaded(false);
-    }
-  }, [user, loadStats, permission, requestNotificationPermission, dataLoaded]);
+    fetchDashboardStats()
+  }, [user, isSupabaseConnected])
 
-  const handleQuickAction = async (action: string) => {
-    try {
-      switch (action) {
-        case 'voice':
-          navigate('/voice');
-          break;
-        case 'mood':
-          navigate('/mood');
-          break;
-        case 'task':
-          navigate('/tasks');
-          break;
-        case 'schedule-mood-reminder':
-          if (!isConnectedToSupabase) {
-            toast.error('Cannot schedule reminder - no connection to server');
-            return;
-          }
-          await scheduleMoodReminder();
-          break;
-        case 'schedule-daily-summary':
-          if (!isConnectedToSupabase) {
-            toast.error('Cannot schedule summary - no connection to server');
-            return;
-          }
-          await scheduleDailySummary();
-          break;
-        case 'enable-notifications':
-          await requestNotificationPermission();
-          break;
-        case 'retry-connection':
-          setLoading(true);
-          setDataLoaded(false);
-          await loadStats();
-          break;
-        default:
-          break;
-      }
-    } catch (error) {
-      console.error('Error handling quick action:', error);
-      toast.error('Failed to perform action');
-    }
-  };
+  const handleRetry = async () => {
+    setLoading(true)
+    await checkConnection()
+    await fetchDashboardStats()
+  }
 
-  const completionRate = stats.totalTasks > 0 ? (stats.completedTasks / stats.totalTasks) * 100 : 0;
-
-  const statCards = [
-    {
-      title: 'Tasks Completed',
-      value: `${stats.completedTasks}/${stats.totalTasks}`,
-      subtitle: `${Math.round(completionRate)}% completion rate`,
-      icon: CheckSquare,
-      color: 'from-green-400 via-emerald-500 to-teal-500',
-      bgColor: 'bg-gradient-to-br from-green-50/50 to-emerald-50/50 dark:from-green-900/20 dark:to-emerald-900/20',
-      textColor: 'text-green-700 dark:text-green-400',
-      glowColor: 'shadow-green-500/25',
-    },
-    {
-      title: "Today's Mood",
-      value: stats.todayMood ? `${stats.todayMood}/10` : 'Not logged',
-      subtitle: stats.todayMood ? 'Feeling great!' : 'Log your mood',
-      icon: Heart,
-      color: 'from-pink-400 via-rose-500 to-red-500',
-      bgColor: 'bg-gradient-to-br from-pink-50/50 to-rose-50/50 dark:from-pink-900/20 dark:to-rose-900/20',
-      textColor: 'text-pink-700 dark:text-pink-400',
-      glowColor: 'shadow-pink-500/25',
-    },
-    {
-      title: 'Chat Sessions',
-      value: stats.voiceSessions.toString(),
-      subtitle: 'AI conversations',
-      icon: Mic,
-      color: 'from-purple-400 via-violet-500 to-indigo-500',
-      bgColor: 'bg-gradient-to-br from-purple-50/50 to-violet-50/50 dark:from-purple-900/20 dark:to-violet-900/20',
-      textColor: 'text-purple-700 dark:text-purple-400',
-      glowColor: 'shadow-purple-500/25',
-    },
-    {
-      title: 'Streak',
-      value: '7 days',
-      subtitle: 'Keep it up!',
-      icon: Award,
-      color: 'from-orange-400 via-amber-500 to-yellow-500',
-      bgColor: 'bg-gradient-to-br from-orange-50/50 to-amber-50/50 dark:from-orange-900/20 dark:to-amber-900/20',
-      textColor: 'text-orange-700 dark:text-orange-400',
-      glowColor: 'shadow-orange-500/25',
-    },
-  ];
-
-  if (loading) {
+  if (!user) {
     return (
-      <div className="space-y-8">
-        <motion.div
-          className="text-center"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-white via-purple-200 to-pink-200 bg-clip-text text-transparent mb-2">
-            Welcome back, {user?.email?.split('@')[0]}!
-          </h1>
-          <p className="text-white/60 text-lg">
-            {format(new Date(), 'EEEE, MMMM do, yyyy')}
-          </p>
-        </motion.div>
-        
-        <div className="flex items-center justify-center h-64">
-          <motion.div
-            className="w-16 h-16 border-4 border-purple-500/30 border-t-purple-500 rounded-full"
-            animate={{ rotate: 360 }}
-            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-          />
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+        <div className="text-center">
+          <Brain className="h-12 w-12 text-indigo-600 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Please sign in</h2>
+          <p className="text-gray-600">You need to be signed in to view your dashboard.</p>
         </div>
       </div>
-    );
+    )
   }
 
   return (
-    <div className="space-y-8 relative">
-      {/* Parallax Background Elements */}
-      <motion.div
-        className="absolute inset-0 pointer-events-none"
-        style={{ y: parallaxY, opacity: parallaxOpacity }}
-      >
-        <div className="absolute top-20 left-10">
-          <motion.div
-            animate={{ rotate: 360, scale: [1, 1.2, 1] }}
-            transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-          >
-            <Sparkles className="h-8 w-8 text-purple-300/20" />
-          </motion.div>
-        </div>
-        <div className="absolute top-40 right-20">
-          <motion.div
-            animate={{ rotate: -360, scale: [1, 1.1, 1] }}
-            transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
-          >
-            <Zap className="h-6 w-6 text-blue-300/20" />
-          </motion.div>
-        </div>
-        <div className="absolute bottom-20 left-1/4">
-          <motion.div
-            animate={{ rotate: 360, y: [-10, 10, -10] }}
-            transition={{ duration: 25, repeat: Infinity, ease: "linear" }}
-          >
-            <Star className="h-10 w-10 text-yellow-300/20" />
-          </motion.div>
-        </div>
-      </motion.div>
-
-      {/* Welcome Header */}
-      <FloatingElement delay={0}>
-        <motion.div
-          className="text-center relative"
-          initial={{ opacity: 0, y: 50 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8 }}
-        >
-          <motion.h1
-            className="text-5xl md:text-6xl font-bold bg-gradient-to-r from-white via-purple-200 to-pink-200 bg-clip-text text-transparent mb-4"
-            initial={{ scale: 0.8 }}
-            animate={{ scale: 1 }}
-            transition={{ delay: 0.2, duration: 0.6 }}
-          >
-            Welcome back, {user?.email?.split('@')[0]}!
-          </motion.h1>
-          <motion.p
-            className="text-white/60 text-xl"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.4 }}
-          >
-            {format(new Date(), 'EEEE, MMMM do, yyyy')}
-          </motion.p>
-          
-          {/* Decorative Elements */}
-          <motion.div
-            className="absolute -top-4 left-1/2 transform -translate-x-1/2"
-            animate={{ y: [-5, 5, -5], rotate: [0, 180, 360] }}
-            transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-          >
-            <Crown className="h-8 w-8 text-yellow-400/50" />
-          </motion.div>
-        </motion.div>
-      </FloatingElement>
-
-      {/* Connection Error Banner */}
-      {(!isOnline || !isConnectedToSupabase || error) && (
-        <FloatingElement delay={0.3}>
-          <motion.div
-            className="bg-gradient-to-r from-yellow-500/20 to-orange-500/20 backdrop-blur-xl border border-yellow-500/30 rounded-2xl p-6"
-            initial={{ opacity: 0, x: -50 }}
-            animate={{ opacity: 1, x: 0 }}
-            whileHover={{ scale: 1.02 }}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                <motion.div
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                >
-                  {!isOnline ? (
-                    <WifiOff className="h-6 w-6 text-yellow-400" />
-                  ) : (
-                    <AlertTriangle className="h-6 w-6 text-yellow-400" />
-                  )}
-                </motion.div>
-                <div>
-                  <p className="font-semibold text-yellow-200">
-                    {!isOnline ? 'No Internet Connection' : 
-                     !isConnectedToSupabase ? 'Server Connection Issues' : 
-                     'Data Loading Issues'}
-                  </p>
-                  <p className="text-sm text-yellow-300/80">
-                    {!isOnline 
-                      ? 'Some features may not work properly without internet access.'
-                      : !isConnectedToSupabase
-                      ? 'Cannot connect to Supabase server. Please check your configuration.'
-                      : error || 'Some data may not be up to date. The app will continue to work normally.'
-                    }
-                  </p>
-                </div>
-              </div>
-              <motion.button
-                onClick={() => handleQuickAction('retry-connection')}
-                className="bg-yellow-500 hover:bg-yellow-400 text-black px-6 py-3 rounded-xl font-semibold transition-colors duration-200"
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                Retry
-              </motion.button>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Header */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Welcome back!</h1>
+              <p className="text-gray-600 mt-1">Here's your mental health journey overview</p>
             </div>
-          </motion.div>
-        </FloatingElement>
-      )}
-
-      {/* Notification Permission Banner */}
-      {permission !== 'granted' && !error && (
-        <FloatingElement delay={0.4}>
-          <motion.div
-            className="bg-gradient-to-r from-blue-500/20 to-cyan-500/20 backdrop-blur-xl border border-blue-500/30 rounded-2xl p-6"
-            initial={{ opacity: 0, x: 50 }}
-            animate={{ opacity: 1, x: 0 }}
-            whileHover={{ scale: 1.02 }}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                <motion.div
-                  animate={{ scale: [1, 1.2, 1] }}
-                  transition={{ duration: 2, repeat: Infinity }}
-                >
-                  <Bell className="h-6 w-6 text-blue-400" />
-                </motion.div>
-                <div>
-                  <p className="font-semibold text-blue-200">Enable Notifications</p>
-                  <p className="text-sm text-blue-300/80">
-                    Get reminders for tasks, mood check-ins, and daily summaries
-                  </p>
-                </div>
-              </div>
-              <motion.button
-                onClick={() => handleQuickAction('enable-notifications')}
-                className="bg-blue-500 hover:bg-blue-400 text-white px-6 py-3 rounded-xl font-semibold transition-colors duration-200"
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                Enable
-              </motion.button>
-            </div>
-          </motion.div>
-        </FloatingElement>
-      )}
-
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {statCards.map((card, index) => {
-          const Icon = card.icon;
-          return (
-            <FloatingElement key={card.title} delay={0.5 + index * 0.1}>
-              <motion.div
-                className={`${card.bgColor} backdrop-blur-xl rounded-2xl p-6 border border-white/10 hover:border-white/20 transition-all duration-300 cursor-pointer transform hover:shadow-2xl ${card.glowColor} relative overflow-hidden group`}
-                whileHover={{ scale: 1.05, y: -10 }}
-                whileTap={{ scale: 0.95 }}
-                initial={{ opacity: 0, y: 50 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.5 + index * 0.1, duration: 0.6 }}
-              >
-                {/* Animated Background Gradient */}
-                <motion.div
-                  className={`absolute inset-0 bg-gradient-to-r ${card.color} opacity-0 group-hover:opacity-10 transition-opacity duration-300`}
-                  initial={false}
-                  animate={{ opacity: [0, 0.05, 0] }}
-                  transition={{ duration: 3, repeat: Infinity }}
-                />
-                
-                <div className="relative z-10">
-                  <div className="flex items-center justify-between mb-4">
-                    <motion.div
-                      className={`bg-gradient-to-r ${card.color} p-3 rounded-xl shadow-lg`}
-                      whileHover={{ rotate: 360, scale: 1.1 }}
-                      transition={{ duration: 0.6 }}
-                    >
-                      <Icon className="h-6 w-6 text-white" />
-                    </motion.div>
-                    <motion.div
-                      animate={{ y: [-2, 2, -2] }}
-                      transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-                    >
-                      <TrendingUp className="h-4 w-4 text-white/40" />
-                    </motion.div>
-                  </div>
-                  <div className={`${card.textColor} space-y-1`}>
-                    <p className="text-sm font-medium opacity-80">{card.title}</p>
-                    <motion.p
-                      className="text-3xl font-bold"
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      transition={{ delay: 0.7 + index * 0.1, type: "spring", stiffness: 200 }}
-                    >
-                      {card.value}
-                    </motion.p>
-                    <p className="text-xs opacity-70">{card.subtitle}</p>
-                  </div>
-                </div>
-              </motion.div>
-            </FloatingElement>
-          );
-        })}
-      </div>
-
-      {/* Quick Actions */}
-      <FloatingElement delay={0.9}>
-        <motion.div
-          className="bg-black/20 backdrop-blur-xl rounded-2xl p-8 border border-white/10 relative overflow-hidden"
-          whileHover={{ scale: 1.01 }}
-        >
-          {/* Background Animation */}
-          <motion.div
-            className="absolute inset-0 bg-gradient-to-r from-purple-600/5 via-blue-600/5 to-pink-600/5"
-            animate={{ x: [-100, 100, -100] }}
-            transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
-          />
-          
-          <div className="relative z-10">
-            <motion.h2
-              className="text-3xl font-bold text-white mb-8 flex items-center space-x-3"
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 1 }}
-            >
-              <motion.div
-                animate={{ rotate: [0, 360] }}
-                transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
-              >
-                <Target className="h-8 w-8 text-purple-400" />
-              </motion.div>
-              <span>Quick Actions</span>
-              <motion.div
-                animate={{ scale: [1, 1.2, 1] }}
-                transition={{ duration: 2, repeat: Infinity }}
-              >
-                <Rocket className="h-6 w-6 text-blue-400" />
-              </motion.div>
-            </motion.h2>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-              {[
-                {
-                  action: 'voice',
-                  icon: Mic,
-                  title: 'Voice Chat',
-                  subtitle: 'Talk to your AI companion',
-                  gradient: 'from-purple-500 via-violet-600 to-indigo-600',
-                  delay: 1.1
-                },
-                {
-                  action: 'mood',
-                  icon: Heart,
-                  title: 'Mood Check',
-                  subtitle: 'Log your emotions',
-                  gradient: 'from-pink-500 via-rose-600 to-red-600',
-                  delay: 1.2
-                },
-                {
-                  action: 'task',
-                  icon: CheckSquare,
-                  title: 'Add Task',
-                  subtitle: 'Create a new reminder',
-                  gradient: 'from-green-500 via-emerald-600 to-teal-600',
-                  delay: 1.3
-                }
-              ].map((item) => (
-                <motion.button
-                  key={item.action}
-                  onClick={() => handleQuickAction(item.action)}
-                  className={`bg-gradient-to-r ${item.gradient} text-white p-6 rounded-2xl hover:shadow-2xl transition-all duration-300 text-left relative overflow-hidden group`}
-                  whileHover={{ scale: 1.05, y: -5 }}
-                  whileTap={{ scale: 0.95 }}
-                  initial={{ opacity: 0, y: 30 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: item.delay, duration: 0.6 }}
-                >
-                  <motion.div
-                    className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                    initial={false}
-                  />
-                  <div className="relative z-10">
-                    <motion.div
-                      whileHover={{ rotate: 360, scale: 1.2 }}
-                      transition={{ duration: 0.6 }}
-                    >
-                      <item.icon className="h-8 w-8 mb-3" />
-                    </motion.div>
-                    <h3 className="font-bold text-lg mb-1">{item.title}</h3>
-                    <p className="text-sm opacity-90">{item.subtitle}</p>
+            {/* Connection Status */}
+            <div className="flex items-center space-x-2">
+              {isOnline ? (
+                isSupabaseConnected ? (
+                  <div className="flex items-center text-green-600">
+                    <Wifi className="h-4 w-4 mr-1" />
+                    <span className="text-sm">Connected</span>
                   </div>
-                </motion.button>
-              ))}
-            </div>
-
-            {/* Notification Actions */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {[
-                {
-                  action: 'schedule-mood-reminder',
-                  title: 'Schedule Mood Reminder',
-                  subtitle: 'Get reminded to check your mood tomorrow',
-                  gradient: 'from-blue-500 via-cyan-600 to-teal-600',
-                  delay: 1.4
-                },
-                {
-                  action: 'schedule-daily-summary',
-                  title: 'Schedule Daily Summary',
-                  subtitle: 'Get your end-of-day report tonight',
-                  gradient: 'from-indigo-500 via-purple-600 to-pink-600',
-                  delay: 1.5
-                }
-              ].map((item) => (
-                <motion.button
-                  key={item.action}
-                  onClick={() => handleQuickAction(item.action)}
-                  disabled={!isConnectedToSupabase}
-                  className={`bg-gradient-to-r ${item.gradient} text-white p-6 rounded-2xl hover:shadow-2xl transition-all duration-300 text-left flex items-center space-x-4 disabled:opacity-50 disabled:cursor-not-allowed relative overflow-hidden group`}
-                  whileHover={{ scale: 1.02, y: -3 }}
-                  whileTap={{ scale: 0.98 }}
-                  initial={{ opacity: 0, x: -30 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: item.delay, duration: 0.6 }}
-                >
-                  <motion.div
-                    className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                    initial={false}
-                  />
-                  <div className="relative z-10 flex items-center space-x-4">
-                    <motion.div
-                      whileHover={{ rotate: 360, scale: 1.1 }}
-                      transition={{ duration: 0.6 }}
-                    >
-                      <Plus className="h-6 w-6" />
-                    </motion.div>
-                    <div>
-                      <h3 className="font-bold">{item.title}</h3>
-                      <p className="text-sm opacity-90">{item.subtitle}</p>
-                    </div>
+                ) : (
+                  <div className="flex items-center text-yellow-600">
+                    <AlertCircle className="h-4 w-4 mr-1" />
+                    <span className="text-sm">Connecting...</span>
                   </div>
-                </motion.button>
-              ))}
+                )
+              ) : (
+                <div className="flex items-center text-red-600">
+                  <WifiOff className="h-4 w-4 mr-1" />
+                  <span className="text-sm">Offline</span>
+                </div>
+              )}
+              
+              <button
+                onClick={handleRetry}
+                disabled={loading}
+                className="p-2 text-gray-500 hover:text-gray-700 transition-colors"
+                title="Refresh data"
+              >
+                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              </button>
             </div>
           </div>
-        </motion.div>
-      </FloatingElement>
+        </div>
 
-      {/* Built on Bolt Badge */}
-      <FloatingElement delay={1.6}>
-        <motion.div
-          className="flex justify-center"
-          whileHover={{ scale: 1.05 }}
-        >
-          <motion.a
-            href="https://bolt.new"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center space-x-3 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 text-white px-6 py-3 rounded-full text-sm font-medium hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1 relative overflow-hidden group"
-            whileHover={{ y: -5 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            <motion.div
-              className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-              initial={false}
-            />
-            <div className="relative z-10 flex items-center space-x-3">
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+        {/* Error Message */}
+        {error && (
+          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
+            <div className="flex items-center">
+              <AlertCircle className="h-5 w-5 text-red-600 mr-2" />
+              <p className="text-red-800">{error}</p>
+              <button
+                onClick={handleRetry}
+                className="ml-auto text-red-600 hover:text-red-800 underline"
               >
-                <Brain className="h-4 w-4" />
-              </motion.div>
-              <span>Built on Bolt</span>
-              <motion.div
-                animate={{ scale: [1, 1.2, 1] }}
-                transition={{ duration: 1.5, repeat: Infinity }}
-              >
-                <ExternalLink className="h-3 w-3" />
-              </motion.div>
+                Retry
+              </button>
             </div>
-          </motion.a>
-        </motion.div>
-      </FloatingElement>
+          </div>
+        )}
+
+        {/* Stats Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Video Sessions</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {loading ? '...' : stats.totalSessions}
+                </p>
+              </div>
+              <div className="p-3 bg-blue-100 rounded-lg">
+                <Video className="h-6 w-6 text-blue-600" />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Completed Tasks</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {loading ? '...' : stats.completedTasks}
+                </p>
+              </div>
+              <div className="p-3 bg-green-100 rounded-lg">
+                <Calendar className="h-6 w-6 text-green-600" />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Mood Entries</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {loading ? '...' : stats.moodEntries}
+                </p>
+              </div>
+              <div className="p-3 bg-purple-100 rounded-lg">
+                <Heart className="h-6 w-6 text-purple-600" />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Average Mood</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {loading ? '...' : stats.avgMood > 0 ? `${stats.avgMood}/10` : 'N/A'}
+                </p>
+              </div>
+              <div className="p-3 bg-yellow-100 rounded-lg">
+                <TrendingUp className="h-6 w-6 text-yellow-600" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 hover:shadow-md transition-shadow">
+            <div className="flex items-center mb-4">
+              <div className="p-3 bg-blue-100 rounded-lg mr-4">
+                <Video className="h-6 w-6 text-blue-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Video Consultation</h3>
+                <p className="text-gray-600 text-sm">Start a session with AI therapist</p>
+              </div>
+            </div>
+            <button 
+              className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
+              disabled={!isSupabaseConnected}
+            >
+              Start Session
+            </button>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 hover:shadow-md transition-shadow">
+            <div className="flex items-center mb-4">
+              <div className="p-3 bg-purple-100 rounded-lg mr-4">
+                <Heart className="h-6 w-6 text-purple-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Track Mood</h3>
+                <p className="text-gray-600 text-sm">Log your current mood</p>
+              </div>
+            </div>
+            <button 
+              className="w-full bg-purple-600 text-white py-2 px-4 rounded-lg hover:bg-purple-700 transition-colors"
+              disabled={!isSupabaseConnected}
+            >
+              Add Entry
+            </button>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 hover:shadow-md transition-shadow">
+            <div className="flex items-center mb-4">
+              <div className="p-3 bg-green-100 rounded-lg mr-4">
+                <MessageSquare className="h-6 w-6 text-green-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Voice AI</h3>
+                <p className="text-gray-600 text-sm">Chat with voice assistant</p>
+              </div>
+            </div>
+            <button 
+              className="w-full bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 transition-colors"
+              disabled={!isSupabaseConnected}
+            >
+              Start Chat
+            </button>
+          </div>
+        </div>
+
+        {/* Offline Notice */}
+        {!isOnline && (
+          <div className="mt-8 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <div className="flex items-center">
+              <WifiOff className="h-5 w-5 text-yellow-600 mr-2" />
+              <p className="text-yellow-800">
+                You're currently offline. Some features may not be available until you reconnect.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
-  );
+  )
 }
