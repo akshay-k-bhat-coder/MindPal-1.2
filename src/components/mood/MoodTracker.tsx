@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Heart, Calendar, TrendingUp, Save, Smile, Trash2, Edit3 } from 'lucide-react';
+import { Heart, Calendar, TrendingUp, Save, Smile, Trash2, Edit3, Award, Target, Flame } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
+import { useMoodStreak } from '../../hooks/useMoodStreak';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 import { format, subDays, startOfDay } from 'date-fns';
@@ -16,6 +17,16 @@ interface MoodEntry {
 
 export function MoodTracker() {
   const { user } = useAuth();
+  const {
+    currentStreak,
+    longestStreak,
+    loading: streakLoading,
+    getStreakStatus,
+    getDaysUntilMilestone,
+    getStreakEmoji,
+    refreshStreak
+  } = useMoodStreak();
+  
   const [moodEntries, setMoodEntries] = useState<MoodEntry[]>([]);
   const [currentMood, setCurrentMood] = useState(5);
   const [selectedEmoji, setSelectedEmoji] = useState('😊');
@@ -84,6 +95,10 @@ export function MoodTracker() {
 
       setMoodEntries([data, ...moodEntries]);
       setNotes('');
+      
+      // Refresh streak calculation
+      refreshStreak();
+      
       toast.success('Mood saved! 🎉');
     } catch (error) {
       console.error('Error saving mood:', error);
@@ -104,6 +119,10 @@ export function MoodTracker() {
       if (error) throw error;
 
       setMoodEntries(moodEntries.filter(entry => entry.id !== entryId));
+      
+      // Refresh streak calculation
+      refreshStreak();
+      
       toast.success('Mood entry deleted');
     } catch (error) {
       console.error('Error deleting mood entry:', error);
@@ -150,6 +169,10 @@ export function MoodTracker() {
     setCurrentMood(emojiData.mood);
     setSelectedEmoji(emojiData.emoji);
   };
+
+  const streakStatus = getStreakStatus();
+  const milestone = getDaysUntilMilestone();
+  const streakEmoji = getStreakEmoji();
 
   if (loading) {
     return (
@@ -251,7 +274,7 @@ export function MoodTracker() {
       </motion.div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -285,18 +308,73 @@ export function MoodTracker() {
           className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700"
         >
           <div className="flex items-center space-x-3 mb-2">
-            <Heart className="h-5 w-5 text-pink-600" />
-            <span className="font-medium text-gray-900 dark:text-white">Streak</span>
+            <Flame className="h-5 w-5 text-orange-600" />
+            <span className="font-medium text-gray-900 dark:text-white">Current Streak</span>
           </div>
-          <div className="text-2xl font-bold text-pink-600">7 days</div>
+          <div className="flex items-center space-x-2">
+            <div className="text-2xl font-bold text-orange-600">
+              {streakLoading ? '...' : currentStreak}
+            </div>
+            <span className="text-lg">{streakEmoji}</span>
+          </div>
+          <p className={`text-xs mt-1 ${streakStatus.color}`}>
+            {streakStatus.message}
+          </p>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+          className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700"
+        >
+          <div className="flex items-center space-x-3 mb-2">
+            <Award className="h-5 w-5 text-yellow-600" />
+            <span className="font-medium text-gray-900 dark:text-white">Best Streak</span>
+          </div>
+          <div className="text-2xl font-bold text-yellow-600">
+            {streakLoading ? '...' : longestStreak} days
+          </div>
+          {milestone && (
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              {milestone.days} days to reach {milestone.milestone} days!
+            </p>
+          )}
         </motion.div>
       </div>
+
+      {/* Streak Motivation */}
+      {!streakLoading && currentStreak > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-gradient-to-r from-orange-50 to-yellow-50 dark:from-orange-900/20 dark:to-yellow-900/20 rounded-2xl p-6 border border-orange-200 dark:border-orange-800"
+        >
+          <div className="flex items-center space-x-4">
+            <div className="text-4xl">{streakEmoji}</div>
+            <div>
+              <h3 className="text-lg font-bold text-orange-800 dark:text-orange-300">
+                Amazing! {currentStreak} day streak!
+              </h3>
+              <p className="text-orange-700 dark:text-orange-400">
+                You're building a great habit of tracking your mood. Keep it up!
+              </p>
+              {milestone && (
+                <p className="text-sm text-orange-600 dark:text-orange-500 mt-1">
+                  <Target className="h-4 w-4 inline mr-1" />
+                  Only {milestone.days} more days to reach your {milestone.milestone}-day milestone!
+                </p>
+              )}
+            </div>
+          </div>
+        </motion.div>
+      )}
 
       {/* Recent Entries */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.4 }}
+        transition={{ delay: 0.5 }}
         className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700"
       >
         <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center space-x-2">

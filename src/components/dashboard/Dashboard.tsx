@@ -16,10 +16,12 @@ import {
   Zap,
   Star,
   Rocket,
-  Crown
+  Crown,
+  Flame
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
+import { useMoodStreak } from '../../hooks/useMoodStreak';
 import { supabase } from '../../lib/supabase';
 import { format } from 'date-fns';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -39,6 +41,7 @@ const FloatingElement = ({ children, delay }: { children: React.ReactNode; delay
 export function Dashboard() {
   const { user, handleSupabaseError } = useAuth();
   const { isOnline, isSupabaseConnected } = useNetworkStatus();
+  const { currentStreak, getStreakEmoji, loading: streakLoading } = useMoodStreak();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { scrollY } = useScroll();
@@ -193,6 +196,7 @@ export function Dashboard() {
   };
 
   const completionRate = stats.totalTasks > 0 ? (stats.completedTasks / stats.totalTasks) * 100 : 0;
+  const streakEmoji = getStreakEmoji();
 
   const statCards = [
     {
@@ -226,10 +230,10 @@ export function Dashboard() {
       glowColor: 'shadow-purple-500/25',
     },
     {
-      title: 'Streak',
-      value: '7 days',
-      subtitle: 'Keep it up!',
-      icon: Award,
+      title: 'Mood Streak',
+      value: streakLoading ? '...' : `${currentStreak} days`,
+      subtitle: `Keep it up! ${streakEmoji}`,
+      icon: Flame,
       color: 'from-orange-400 via-amber-500 to-yellow-500',
       bgColor: 'bg-gradient-to-br from-orange-50/50 to-amber-50/50 dark:from-orange-900/20 dark:to-amber-900/20',
       textColor: 'text-orange-700 dark:text-orange-400',
