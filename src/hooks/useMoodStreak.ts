@@ -32,7 +32,7 @@ export function useMoodStreak() {
     // Group entries by date (ignore time)
     const entriesByDate = new Map<string, MoodEntry[]>();
     sortedEntries.forEach(entry => {
-      const dateKey = new Date(entry.created_at).toDateString();
+      const dateKey = new Date(entry.created_at).toISOString().split('T')[0]; // Use ISO date format
       if (!entriesByDate.has(dateKey)) {
         entriesByDate.set(dateKey, []);
       }
@@ -45,8 +45,8 @@ export function useMoodStreak() {
 
     // Calculate current streak
     let currentStreak = 0;
-    const today = new Date().toDateString();
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toDateString();
+    const today = new Date().toISOString().split('T')[0];
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
     // Check if there's an entry today or yesterday to start the streak
     if (uniqueDates.length > 0) {
@@ -58,7 +58,7 @@ export function useMoodStreak() {
         
         for (let i = 0; i < uniqueDates.length; i++) {
           const entryDate = uniqueDates[i];
-          const expectedDate = new Date(checkDate).toDateString();
+          const expectedDate = checkDate.toISOString().split('T')[0];
           
           if (entryDate === expectedDate) {
             currentStreak++;
@@ -110,7 +110,15 @@ export function useMoodStreak() {
   }, []);
 
   const loadMoodStreak = useCallback(async () => {
-    if (!user || !isSupabaseConnected) {
+    if (!user) {
+      setLoading(false);
+      setCurrentStreak(0);
+      setLongestStreak(0);
+      setLastEntryDate(null);
+      return;
+    }
+
+    if (!isSupabaseConnected) {
       setLoading(false);
       return;
     }
@@ -137,17 +145,25 @@ export function useMoodStreak() {
         }
 
         return data;
-      });
+      }, 3, 1000);
 
       if (data) {
         const streakData = calculateStreak(data);
         setCurrentStreak(streakData.current);
         setLongestStreak(streakData.longest);
         setLastEntryDate(streakData.lastEntry);
+      } else {
+        // Set defaults if no data
+        setCurrentStreak(0);
+        setLongestStreak(0);
+        setLastEntryDate(null);
       }
     } catch (error) {
       console.error('Error loading mood streak:', error);
-      // Don't show error to user for streak calculation
+      // Set defaults on error
+      setCurrentStreak(0);
+      setLongestStreak(0);
+      setLastEntryDate(null);
     } finally {
       setLoading(false);
     }
@@ -155,12 +171,15 @@ export function useMoodStreak() {
 
   // Load streak data when component mounts or user changes
   useEffect(() => {
-    if (user && isSupabaseConnected) {
+    if (user) {
       loadMoodStreak();
     } else {
       setLoading(false);
+      setCurrentStreak(0);
+      setLongestStreak(0);
+      setLastEntryDate(null);
     }
-  }, [user, isSupabaseConnected, loadMoodStreak]);
+  }, [user, loadMoodStreak]);
 
   // Set up real-time subscription for mood entries
   useEffect(() => {
@@ -179,7 +198,9 @@ export function useMoodStreak() {
         (payload) => {
           console.log('Mood entry change detected:', payload);
           // Reload streak calculation when mood entries change
-          loadMoodStreak();
+          setTimeout(() => {
+            loadMoodStreak();
+          }, 500); // Small delay to ensure data is committed
         }
       )
       .subscribe();
@@ -194,7 +215,7 @@ export function useMoodStreak() {
       return {
         status: 'none',
         message: 'Start your mood tracking journey!',
-        color: 'text-gray-500'
+        color: 'text-gray-500 dark:text-gray-400'
       };
     }
 
@@ -202,27 +223,27 @@ export function useMoodStreak() {
     const today = new Date();
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
     
-    const lastEntryDateString = lastEntry.toDateString();
-    const todayString = today.toDateString();
-    const yesterdayString = yesterday.toDateString();
+    const lastEntryDateString = lastEntry.toISOString().split('T')[0];
+    const todayString = today.toISOString().split('T')[0];
+    const yesterdayString = yesterday.toISOString().split('T')[0];
 
     if (lastEntryDateString === todayString) {
       return {
         status: 'current',
         message: 'Great! You logged your mood today.',
-        color: 'text-green-600'
+        color: 'text-green-600 dark:text-green-400'
       };
     } else if (lastEntryDateString === yesterdayString) {
       return {
         status: 'yesterday',
         message: 'Log your mood today to continue your streak!',
-        color: 'text-yellow-600'
+        color: 'text-yellow-600 dark:text-yellow-400'
       };
     } else {
       return {
         status: 'broken',
         message: 'Your streak was broken. Start a new one today!',
-        color: 'text-red-600'
+        color: 'text-red-600 dark:text-red-400'
       };
     }
   }, [lastEntryDate]);

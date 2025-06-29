@@ -97,7 +97,9 @@ export function MoodTracker() {
       setNotes('');
       
       // Refresh streak calculation
-      refreshStreak();
+      setTimeout(() => {
+        refreshStreak();
+      }, 500);
       
       toast.success('Mood saved! 🎉');
     } catch (error) {
@@ -121,7 +123,9 @@ export function MoodTracker() {
       setMoodEntries(moodEntries.filter(entry => entry.id !== entryId));
       
       // Refresh streak calculation
-      refreshStreak();
+      setTimeout(() => {
+        refreshStreak();
+      }, 500);
       
       toast.success('Mood entry deleted');
     } catch (error) {
@@ -282,10 +286,10 @@ export function MoodTracker() {
           className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700"
         >
           <div className="flex items-center space-x-3 mb-2">
-            <TrendingUp className="h-5 w-5 text-green-600" />
+            <TrendingUp className="h-5 w-5 text-green-600 dark:text-green-400" />
             <span className="font-medium text-gray-900 dark:text-white">Weekly Average</span>
           </div>
-          <div className="text-2xl font-bold text-green-600">{getWeeklyAverage()}/10</div>
+          <div className="text-2xl font-bold text-green-600 dark:text-green-400">{getWeeklyAverage()}/10</div>
         </motion.div>
 
         <motion.div
@@ -295,10 +299,10 @@ export function MoodTracker() {
           className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700"
         >
           <div className="flex items-center space-x-3 mb-2">
-            <Calendar className="h-5 w-5 text-blue-600" />
+            <Calendar className="h-5 w-5 text-blue-600 dark:text-blue-400" />
             <span className="font-medium text-gray-900 dark:text-white">Entries This Month</span>
           </div>
-          <div className="text-2xl font-bold text-blue-600">{moodEntries.length}</div>
+          <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{moodEntries.length}</div>
         </motion.div>
 
         <motion.div
@@ -308,11 +312,11 @@ export function MoodTracker() {
           className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700"
         >
           <div className="flex items-center space-x-3 mb-2">
-            <Flame className="h-5 w-5 text-orange-600" />
+            <Flame className="h-5 w-5 text-orange-600 dark:text-orange-400" />
             <span className="font-medium text-gray-900 dark:text-white">Current Streak</span>
           </div>
           <div className="flex items-center space-x-2">
-            <div className="text-2xl font-bold text-orange-600">
+            <div className="text-2xl font-bold text-orange-600 dark:text-orange-400">
               {streakLoading ? '...' : currentStreak}
             </div>
             <span className="text-lg">{streakEmoji}</span>
@@ -329,10 +333,10 @@ export function MoodTracker() {
           className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700"
         >
           <div className="flex items-center space-x-3 mb-2">
-            <Award className="h-5 w-5 text-yellow-600" />
+            <Award className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
             <span className="font-medium text-gray-900 dark:text-white">Best Streak</span>
           </div>
-          <div className="text-2xl font-bold text-yellow-600">
+          <div className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">
             {streakLoading ? '...' : longestStreak} days
           </div>
           {milestone && (
@@ -378,7 +382,7 @@ export function MoodTracker() {
         className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700"
       >
         <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center space-x-2">
-          <Smile className="h-5 w-5 text-purple-600" />
+          <Smile className="h-5 w-5 text-purple-600 dark:text-purple-400" />
           <span>Recent Entries</span>
         </h3>
 

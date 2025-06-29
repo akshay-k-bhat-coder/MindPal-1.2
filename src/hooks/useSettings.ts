@@ -19,7 +19,7 @@ export interface UserSettings {
 }
 
 const defaultSettings: UserSettings = {
-  theme: 'light',
+  theme: 'dark', // Default to dark theme
   language: 'en',
   voice_speed: 'normal',
   ai_personality: 'supportive',
@@ -40,19 +40,29 @@ export function useSettings() {
   const [saving, setSaving] = useState(false);
   const [creatingDefaults, setCreatingDefaults] = useState(false);
 
-  const loadSettings = useCallback(async () => {
-    if (loading) {
-      console.warn('Settings load already in progress, skipping.');
-      return;
+  const applyTheme = useCallback((theme: 'light' | 'dark' | 'auto') => {
+    const root = document.documentElement;
+    
+    if (theme === 'auto') {
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      root.classList.toggle('dark', prefersDark);
+    } else {
+      root.classList.toggle('dark', theme === 'dark');
     }
-    console.log('Loading settings from Supabase...', { user, isConnectedToSupabase });
+  }, []);
+
+  const loadSettings = useCallback(async () => {
     if (!user) {
       setLoading(false);
+      // Apply default theme when no user
+      applyTheme(defaultSettings.theme);
       return;
     }
 
     if (!isConnectedToSupabase) {
       setLoading(false);
+      // Apply current settings theme when offline
+      applyTheme(settings.theme);
       return;
     }
 
@@ -71,11 +81,11 @@ export function useSettings() {
         }
 
         return data;
-      });
+      }, 3, 1000);
 
       if (data) {
         const loadedSettings: UserSettings = {
-          theme: data.theme || 'light',
+          theme: data.theme || 'dark',
           language: data.language || 'en',
           voice_speed: data.voice_speed || 'normal',
           ai_personality: data.ai_personality || 'supportive',
@@ -90,20 +100,28 @@ export function useSettings() {
         setSettings(loadedSettings);
         applyTheme(loadedSettings.theme);
       } else {
-        // Create default settings if they don't exist and we're not already creating them
+        // Create default settings if they don't exist
         if (!creatingDefaults && !saving) {
           await createDefaultSettings();
+        } else {
+          // Apply default theme if we can't create settings
+          setSettings(defaultSettings);
+          applyTheme(defaultSettings.theme);
         }
       }
     } catch (error) {
       console.error('Error loading settings:', error);
+      // Apply default settings on error
+      setSettings(defaultSettings);
+      applyTheme(defaultSettings.theme);
+      
       if (isConnectedToSupabase) {
-        toast.error('Failed to load settings');
+        toast.error('Failed to load settings, using defaults');
       }
     } finally {
       setLoading(false);
     }
-  }, [user, handleSupabaseError, creatingDefaults, saving, withRetry, isConnectedToSupabase]);
+  }, [user, handleSupabaseError, creatingDefaults, saving, withRetry, isConnectedToSupabase, applyTheme, settings.theme]);
 
   const createDefaultSettings = async () => {
     if (!user || creatingDefaults || !isConnectedToSupabase) return;
@@ -126,12 +144,16 @@ export function useSettings() {
           if (!isJWTError) throw error;
           return;
         }
-      });
+      }, 3, 1000);
       
       setSettings(defaultSettings);
       applyTheme(defaultSettings.theme);
     } catch (error) {
       console.error('Error creating default settings:', error);
+      // Still apply defaults locally
+      setSettings(defaultSettings);
+      applyTheme(defaultSettings.theme);
+      
       if (isConnectedToSupabase) {
         toast.error('Failed to create default settings');
       }
@@ -146,14 +168,23 @@ export function useSettings() {
       return;
     }
 
+    const updatedSettings = { ...settings, ...newSettings };
+    
+    // Apply theme immediately for better UX
+    if (newSettings.theme) {
+      applyTheme(newSettings.theme);
+    }
+    
+    // Update local state immediately
+    setSettings(updatedSettings);
+
     if (!isConnectedToSupabase) {
-      toast.error('Cannot save settings - no connection to server');
+      toast.error('Settings saved locally. Will sync when connection is restored.');
       return;
     }
 
     try {
       setSaving(true);
-      const updatedSettings = { ...settings, ...newSettings };
       
       await withRetry(async () => {
         const { error } = await supabase
@@ -171,43 +202,32 @@ export function useSettings() {
           if (!isJWTError) throw error;
           return;
         }
-      });
-
-      setSettings(updatedSettings);
-      
-      // Apply theme immediately if changed
-      if (newSettings.theme) {
-        applyTheme(newSettings.theme);
-      }
+      }, 3, 1000);
       
       toast.success('Settings saved successfully!');
     } catch (error) {
       console.error('Error updating settings:', error);
       toast.error('Failed to save settings. Please try again.');
+      
+      // Revert local changes on error
+      setSettings(settings);
+      if (newSettings.theme) {
+        applyTheme(settings.theme);
+      }
     } finally {
       setSaving(false);
     }
   };
 
-  const applyTheme = (theme: 'light' | 'dark' | 'auto') => {
-    const root = document.documentElement;
-    
-    if (theme === 'auto') {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      root.classList.toggle('dark', prefersDark);
-    } else {
-      root.classList.toggle('dark', theme === 'dark');
-    }
-  };
-
   useEffect(() => {
-    console.log('useSettings useEffect triggered', { user });
     if (user) {
       loadSettings();
     } else {
       setLoading(false);
+      setSettings(defaultSettings);
+      applyTheme(defaultSettings.theme);
     }
-  }, [user]);
+  }, [user, loadSettings]);
 
   // Listen for system theme changes when auto mode is enabled
   useEffect(() => {
@@ -218,7 +238,12 @@ export function useSettings() {
       mediaQuery.addEventListener('change', handleChange);
       return () => mediaQuery.removeEventListener('change', handleChange);
     }
-  }, [settings.theme]);
+  }, [settings.theme, applyTheme]);
+
+  // Apply theme on initial load
+  useEffect(() => {
+    applyTheme(settings.theme);
+  }, [settings.theme, applyTheme]);
 
   return {
     settings,

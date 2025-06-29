@@ -5,8 +5,13 @@
 /* Custom styles for MindPal */
 body {
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: #0f172a;
-  color: #f1f5f9;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Light mode (default) */
+body {
+  background-color: #f8fafc;
+  color: #1e293b;
 }
 
 /* Dark mode styles */
@@ -69,31 +74,6 @@ body {
 }
 
 /* Make sure all text in cards is visible */
-.dark .bg-white,
-.dark .bg-gray-50,
-.dark .bg-gray-100 {
-  color: #f8fafc !important;
-}
-
-.dark .bg-white *,
-.dark .bg-gray-50 *,
-.dark .bg-gray-100 * {
-  color: inherit !important;
-}
-
-/* Specific fixes for common text elements */
-.dark span,
-.dark div {
-  color: inherit;
-}
-
-/* Make sure placeholder text is visible */
-.dark input::placeholder,
-.dark textarea::placeholder {
-  color: #9ca3af !important;
-}
-
-/* Dark mode background improvements */
 .dark .bg-white {
   background-color: #1e293b !important;
   color: #f8fafc !important;
@@ -125,6 +105,113 @@ body {
 
 .dark .border-gray-300 {
   border-color: #64748b !important;
+}
+
+/* Make sure placeholder text is visible */
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #9ca3af !important;
+}
+
+/* Improved form styling for dark mode */
+.dark input[type="text"],
+.dark input[type="email"],
+.dark input[type="tel"],
+.dark input[type="password"],
+.dark input[type="datetime-local"],
+.dark input[type="range"],
+.dark textarea,
+.dark select {
+  background-color: #374151 !important;
+  border-color: #4b5563 !important;
+  color: #f9fafb !important;
+}
+
+.dark input[type="text"]:focus,
+.dark input[type="email"]:focus,
+.dark input[type="tel"]:focus,
+.dark input[type="password"]:focus,
+.dark input[type="datetime-local"]:focus,
+.dark input[type="range"]:focus,
+.dark textarea:focus,
+.dark select:focus {
+  background-color: #374151 !important;
+  border-color: #8b5cf6 !important;
+  color: #f9fafb !important;
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2) !important;
+}
+
+/* Dark mode improvements for disabled inputs */
+.dark input:disabled,
+.dark textarea:disabled,
+.dark select:disabled {
+  background-color: #1f2937 !important;
+  color: #6b7280 !important;
+  border-color: #374151 !important;
+}
+
+/* Ensure colored text remains colored in dark mode */
+.dark .text-purple-600,
+.dark .text-purple-700 {
+  color: #a855f7 !important;
+}
+
+.dark .text-purple-400 {
+  color: #c084fc !important;
+}
+
+.dark .text-blue-600,
+.dark .text-blue-700 {
+  color: #3b82f6 !important;
+}
+
+.dark .text-blue-400 {
+  color: #60a5fa !important;
+}
+
+.dark .text-green-600,
+.dark .text-green-700 {
+  color: #10b981 !important;
+}
+
+.dark .text-green-400 {
+  color: #34d399 !important;
+}
+
+.dark .text-red-600,
+.dark .text-red-700 {
+  color: #ef4444 !important;
+}
+
+.dark .text-red-400 {
+  color: #f87171 !important;
+}
+
+.dark .text-yellow-600,
+.dark .text-yellow-700 {
+  color: #f59e0b !important;
+}
+
+.dark .text-yellow-400 {
+  color: #fbbf24 !important;
+}
+
+.dark .text-orange-600,
+.dark .text-orange-700 {
+  color: #f97316 !important;
+}
+
+.dark .text-orange-400 {
+  color: #fb923c !important;
+}
+
+.dark .text-pink-600,
+.dark .text-pink-700 {
+  color: #ec4899 !important;
+}
+
+.dark .text-pink-400 {
+  color: #f472b6 !important;
 }
 
 /* Custom mood slider styling */
@@ -160,6 +247,10 @@ body {
 }
 
 ::-webkit-scrollbar-track {
+  background: #e2e8f0;
+}
+
+.dark ::-webkit-scrollbar-track {
   background: #1e293b;
 }
 
@@ -325,7 +416,7 @@ select:focus {
 }
 
 .toggle-switch .slider {
-  @apply w-11 h-6 bg-gray-200 rounded-full transition-colors duration-200 ease-in-out;
+  @apply w-11 h-6 bg-gray-200 dark:bg-gray-700 rounded-full transition-colors duration-200 ease-in-out;
 }
 
 .toggle-switch input:checked + .slider {
@@ -338,29 +429,6 @@ select:focus {
 
 .toggle-switch input:checked + .slider:before {
   @apply transform translate-x-5;
-}
-
-/* Notification styles */
-.notification-enter {
-  opacity: 0;
-  transform: translateX(100%);
-}
-
-.notification-enter-active {
-  opacity: 1;
-  transform: translateX(0);
-  transition: opacity 300ms, transform 300ms;
-}
-
-.notification-exit {
-  opacity: 1;
-  transform: translateX(0);
-}
-
-.notification-exit-active {
-  opacity: 0;
-  transform: translateX(100%);
-  transition: opacity 300ms, transform 300ms;
 }
 
 /* Voice recording animation */
@@ -421,311 +489,56 @@ select:focus {
   @apply bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-2xl px-4 py-3 max-w-xs sm:max-w-md lg:max-w-lg border border-gray-200 dark:border-gray-700;
 }
 
-/* Improved form styling for dark mode */
-.dark input[type="text"],
-.dark input[type="email"],
-.dark input[type="tel"],
-.dark input[type="password"],
-.dark input[type="datetime-local"],
-.dark input[type="range"],
-.dark textarea,
-.dark select {
-  background-color: #374151 !important;
-  border-color: #4b5563 !important;
-  color: #f9fafb !important;
+/* Theme transition improvements */
+html {
+  transition: background-color 0.3s ease;
 }
 
-.dark input[type="text"]:focus,
-.dark input[type="email"]:focus,
-.dark input[type="tel"]:focus,
-.dark input[type="password"]:focus,
-.dark input[type="datetime-local"]:focus,
-.dark input[type="range"]:focus,
-.dark textarea:focus,
-.dark select:focus {
-  background-color: #374151 !important;
-  border-color: #8b5cf6 !important;
-  color: #f9fafb !important;
+html.dark {
+  background-color: #0f172a;
 }
 
-.dark input::placeholder,
-.dark textarea::placeholder {
-  color: #9ca3af !important;
+html:not(.dark) {
+  background-color: #f8fafc;
 }
 
-/* Dark mode improvements for disabled inputs */
-.dark input:disabled,
-.dark textarea:disabled,
-.dark select:disabled {
-  background-color: #1f2937 !important;
-  color: #6b7280 !important;
-  border-color: #374151 !important;
-}
-
-/* Force text visibility in all containers */
-.dark .bg-white *:not(.text-purple-600):not(.text-blue-600):not(.text-green-600):not(.text-red-600):not(.text-yellow-600):not(.text-orange-600):not(.text-pink-600):not(.text-indigo-600) {
+/* Ensure proper contrast for all text elements */
+.dark .text-black {
   color: #f8fafc !important;
 }
 
-.dark .bg-gray-50 *:not(.text-purple-600):not(.text-blue-600):not(.text-green-600):not(.text-red-600):not(.text-yellow-600):not(.text-orange-600):not(.text-pink-600):not(.text-indigo-600) {
+.dark .text-gray-900 {
   color: #f8fafc !important;
 }
 
-.dark .bg-gray-100 *:not(.text-purple-600):not(.text-blue-600):not(.text-green-600):not(.text-red-600):not(.text-yellow-600):not(.text-orange-600):not(.text-pink-600):not(.text-indigo-600) {
-  color: #f8fafc !important;
+/* Fix any remaining visibility issues */
+.dark * {
+  border-color: inherit;
 }
 
-/* Ensure colored text remains colored */
-.dark .text-purple-600,
-.dark .text-purple-700,
-.dark .text-purple-400 {
-  color: #a855f7 !important;
+.dark .bg-white * {
+  color: #f8fafc;
 }
 
-.dark .text-blue-600,
-.dark .text-blue-700,
-.dark .text-blue-400 {
-  color: #3b82f6 !important;
+.dark .bg-gray-50 * {
+  color: #f8fafc;
 }
 
-.dark .text-green-600,
-.dark .text-green-700,
-.dark .text-green-400 {
-  color: #10b981 !important;
+.dark .bg-gray-100 * {
+  color: #f8fafc;
 }
 
-.dark .text-red-600,
-.dark .text-red-700,
-.dark .text-red-400 {
-  color: #ef4444 !important;
+/* Ensure buttons remain visible */
+.dark button {
+  color: inherit;
 }
 
-.dark .text-yellow-600,
-.dark .text-yellow-700,
-.dark .text-yellow-400 {
-  color: #f59e0b !important;
+.dark .bg-white button {
+  color: #f8fafc;
 }
 
-.dark .text-orange-600,
-.dark .text-orange-700,
-.dark .text-orange-400 {
-  color: #f97316 !important;
-}
-
-.dark .text-pink-600,
-.dark .text-pink-700,
-.dark .text-pink-400 {
-  color: #ec4899 !important;
-}
-
-/* Orgasmic animations and effects */
-@keyframes float {
-  0%, 100% {
-    transform: translateY(0px);
-  }
-  50% {
-    transform: translateY(-20px);
-  }
-}
-
-@keyframes glow {
-  0%, 100% {
-    box-shadow: 0 0 20px rgba(168, 85, 247, 0.3);
-  }
-  50% {
-    box-shadow: 0 0 40px rgba(168, 85, 247, 0.6);
-  }
-}
-
-@keyframes shimmer {
-  0% {
-    background-position: -200% 0;
-  }
-  100% {
-    background-position: 200% 0;
-  }
-}
-
-.float-animation {
-  animation: float 6s ease-in-out infinite;
-}
-
-.glow-animation {
-  animation: glow 3s ease-in-out infinite;
-}
-
-.shimmer-animation {
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-  background-size: 200% 100%;
-  animation: shimmer 2s infinite;
-}
-
-/* Parallax and 3D effects */
-.parallax-element {
-  transform-style: preserve-3d;
-  will-change: transform;
-}
-
-.perspective-1000 {
-  perspective: 1000px;
-}
-
-/* Typewriter cursor */
-.typewriter-cursor {
-  display: inline-block;
-  background-color: currentColor;
-  margin-left: 0.1em;
-  width: 2px;
-  animation: blink 1s infinite;
-}
-
-@keyframes blink {
-  0%, 50% {
-    opacity: 1;
-  }
-  51%, 100% {
-    opacity: 0;
-  }
-}
-
-/* Particle effects */
-.particle {
-  position: absolute;
-  pointer-events: none;
-  border-radius: 50%;
-  animation: particle-float 3s linear infinite;
-}
-
-@keyframes particle-float {
-  0% {
-    transform: translateY(100vh) scale(0);
-    opacity: 0;
-  }
-  10% {
-    opacity: 1;
-  }
-  90% {
-    opacity: 1;
-  }
-  100% {
-    transform: translateY(-100px) scale(1);
-    opacity: 0;
-  }
-}
-
-/* Holographic effects */
-.holographic {
-  background: linear-gradient(45deg, #ff0080, #ff8c00, #40e0d0, #ff0080);
-  background-size: 400% 400%;
-  animation: holographic 4s ease infinite;
-}
-
-@keyframes holographic {
-  0% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-  100% {
-    background-position: 0% 50%;
-  }
-}
-
-/* Neon glow effects */
-.neon-glow {
-  text-shadow: 
-    0 0 5px currentColor,
-    0 0 10px currentColor,
-    0 0 15px currentColor,
-    0 0 20px currentColor;
-}
-
-.neon-border {
-  border: 2px solid;
-  box-shadow: 
-    inset 0 0 10px currentColor,
-    0 0 10px currentColor,
-    0 0 20px currentColor,
-    0 0 40px currentColor;
-}
-
-/* Matrix rain effect */
-.matrix-rain {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: -1;
-  opacity: 0.1;
-}
-
-/* Cosmic background */
-.cosmic-bg {
-  background: 
-    radial-gradient(ellipse at top, #1e3a8a 0%, transparent 50%),
-    radial-gradient(ellipse at bottom, #7c3aed 0%, transparent 50%),
-    radial-gradient(ellipse at left, #db2777 0%, transparent 50%),
-    radial-gradient(ellipse at right, #059669 0%, transparent 50%);
-}
-
-/* Liquid morphing */
-@keyframes liquid-morph {
-  0%, 100% {
-    border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%;
-  }
-  50% {
-    border-radius: 30% 60% 70% 40% / 50% 60% 30% 60%;
-  }
-}
-
-.liquid-morph {
-  animation: liquid-morph 8s ease-in-out infinite;
-}
-
-/* Cyberpunk glitch effect */
-@keyframes glitch {
-  0% {
-    transform: translate(0);
-  }
-  20% {
-    transform: translate(-2px, 2px);
-  }
-  40% {
-    transform: translate(-2px, -2px);
-  }
-  60% {
-    transform: translate(2px, 2px);
-  }
-  80% {
-    transform: translate(2px, -2px);
-  }
-  100% {
-    transform: translate(0);
-  }
-}
-
-.glitch-effect {
-  animation: glitch 0.3s infinite;
-}
-
-/* Aurora borealis effect */
-@keyframes aurora {
-  0% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-  100% {
-    background-position: 0% 50%;
-  }
-}
-
-.aurora-bg {
-  background: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab);
-  background-size: 400% 400%;
-  animation: aurora 15s ease infinite;
+/* Fix select dropdown in dark mode */
+.dark select option {
+  background-color: #374151;
+  color: #f9fafb;
 }
