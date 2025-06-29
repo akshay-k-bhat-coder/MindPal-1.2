@@ -13,7 +13,8 @@ import {
   Wifi,
   WifiOff,
   Shield,
-  RefreshCw
+  RefreshCw,
+  X
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useSettings } from '../../hooks/useSettings';
@@ -32,6 +33,7 @@ export function VideoConsultation() {
     sessionDuration,
     startSession,
     endSession,
+    forceEndLingeringSession,
     isLoading,
     error: tavusError,
     formatDuration
@@ -166,6 +168,16 @@ export function VideoConsultation() {
     }
   };
 
+  const handleClearLingeringSession = async () => {
+    try {
+      await forceEndLingeringSession();
+      toast.success('Session cleared successfully. You can now start a new session.');
+    } catch (error) {
+      console.error('Failed to clear lingering session:', error);
+      toast.error('Failed to clear session. Please try again.');
+    }
+  };
+
   const toggleVideo = () => {
     if (localStream) {
       const videoTrack = localStream.getVideoTracks()[0];
@@ -225,6 +237,9 @@ export function VideoConsultation() {
     { id: 'friendly', name: 'Friendly & Casual', description: 'Warm and conversational' },
     { id: 'motivational', name: 'Motivational', description: 'Inspiring and encouraging' },
   ];
+
+  // Check if the error indicates an existing active session
+  const isActiveSessionError = tavusError && tavusError.toLowerCase().includes('already have an active video session');
 
   return (
     <div className="space-y-6">
@@ -508,11 +523,23 @@ export function VideoConsultation() {
           animate={{ opacity: 1, y: 0 }}
           className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4"
         >
-          <div className="flex items-center space-x-3">
-            <Shield className="h-5 w-5 text-red-600 dark:text-red-400" />
-            <div>
+          <div className="flex items-start space-x-3">
+            <Shield className="h-5 w-5 text-red-600 dark:text-red-400 mt-1" />
+            <div className="flex-1">
               <p className="font-medium text-red-800 dark:text-red-300">Session Error</p>
-              <p className="text-sm text-red-700 dark:text-red-400">{tavusError}</p>
+              <p className="text-sm text-red-700 dark:text-red-400 mb-3">{tavusError}</p>
+              
+              {/* Show Clear Session button for active session errors */}
+              {isActiveSessionError && (
+                <button
+                  onClick={handleClearLingeringSession}
+                  disabled={isLoading}
+                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200 flex items-center space-x-2 disabled:opacity-50"
+                >
+                  <X className="h-4 w-4" />
+                  <span>{isLoading ? 'Clearing...' : 'Clear Session'}</span>
+                </button>
+              )}
             </div>
           </div>
         </motion.div>
