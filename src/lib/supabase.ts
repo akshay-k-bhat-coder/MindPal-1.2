@@ -3,15 +3,49 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+// Validate environment variables
 if (!supabaseUrl || !supabaseKey) {
-  console.warn('Missing Supabase environment variables - some features may not work');
+  console.error('Missing Supabase environment variables:', {
+    url: supabaseUrl ? 'present' : 'missing',
+    key: supabaseKey ? 'present' : 'missing'
+  });
+  throw new Error('Supabase configuration is incomplete. Please check your environment variables.');
 }
 
-// Create client with fallback values to prevent crashes
-export const supabase = createClient(
-  supabaseUrl || 'https://placeholder.supabase.co', 
-  supabaseKey || 'placeholder-key'
-);
+// Validate URL format
+if (!supabaseUrl.startsWith('https://') || !supabaseUrl.includes('.supabase.co')) {
+  console.error('Invalid Supabase URL format:', supabaseUrl);
+  throw new Error('Invalid Supabase URL format. Expected format: https://[project-id].supabase.co');
+}
+
+// Create client with proper error handling
+export const supabase = createClient(supabaseUrl, supabaseKey, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true
+  },
+  global: {
+    headers: {
+      'X-Client-Info': 'mindpal-app'
+    }
+  }
+});
+
+// Test connection function
+export const testSupabaseConnection = async (): Promise<boolean> => {
+  try {
+    const { data, error } = await supabase.from('profiles').select('count').limit(1);
+    if (error) {
+      console.warn('Supabase connection test failed:', error.message);
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.warn('Supabase connection test error:', error);
+    return false;
+  }
+};
 
 // Simplified database types - no complex type generation needed
 export interface Database {
