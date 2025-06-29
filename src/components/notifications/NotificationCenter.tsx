@@ -1,20 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Bell, 
-  X, 
-  Check, 
-  Clock, 
-  Heart, 
-  CheckSquare, 
-  BarChart3,
-  Award,
-  AlertTriangle,
-  Settings,
-  Trash2,
-  MarkAsRead,
-  Filter
-} from 'lucide-react';
+import { Bell, X, Check, Clock, Heart, CheckSquare, BarChart3, Award, AlertTriangle, Settings, Trash2, BookMarked as MarkAsRead, Filter } from 'lucide-react';
 import { useNotifications } from '../../hooks/useNotifications';
 import { format, isToday, isYesterday, formatDistanceToNow } from 'date-fns';
 
