@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useAuth } from './useAuth';
 import { useNetworkStatus } from './useNetworkStatus';
+import { useSessionReports } from './useSessionReports';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 
@@ -19,8 +20,10 @@ interface TavusConfig {
 export function useTavusVideo() {
   const { user, handleSupabaseError } = useAuth();
   const { isOnline, withRetry } = useNetworkStatus();
+  const { generateSessionReport, trackSessionEvent } = useSessionReports();
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [sessionData, setSessionData] = useState<TavusSession | null>(null);
+  const [currentVideoSessionId, setCurrentVideoSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [sessionDuration, setSessionDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -255,8 +258,8 @@ export function useTavusVideo() {
       // Store session in database
       if (user) {
         try {
-          await withRetry(async () => {
-            const { error } = await supabase
+          const { data: videoSession, error } = await withRetry(async () => {
+            const { data, error } = await supabase
               .from('video_sessions')
               .insert([{
                 user_id: user.id,
@@ -268,13 +271,29 @@ export function useTavusVideo() {
                   max_session_duration: maxSessionDuration,
                 },
                 duration_seconds: 0
-              }]);
+              }])
+              .select()
+              .single();
 
             if (error) {
               const isJWTError = await handleSupabaseError(error);
               if (!isJWTError) throw error;
+              return null;
             }
+
+            return data;
           });
+
+          if (videoSession) {
+            setCurrentVideoSessionId(videoSession.id);
+            
+            // Track session start event
+            await trackSessionEvent(videoSession.id, 'session_start', {
+              replica_id: replicaId,
+              session_url: session.session_url,
+              max_duration: maxSessionDuration,
+            });
+          }
         } catch (error) {
           console.warn('Failed to store session in database:', error);
           // Continue with session even if database storage fails
@@ -293,11 +312,19 @@ export function useTavusVideo() {
       stopLocalVideo();
       return false;
     }
-  }, [user, createSession, startLocalVideo, stopLocalVideo, startTimer, withRetry, handleSupabaseError]);
+  }, [user, createSession, startLocalVideo, stopLocalVideo, startTimer, withRetry, handleSupabaseError, trackSessionEvent]);
 
   const endSession = useCallback(async (): Promise<void> => {
     try {
       setIsLoading(true);
+
+      // Track session end event
+      if (currentVideoSessionId) {
+        await trackSessionEvent(currentVideoSessionId, 'session_end', {
+          duration_seconds: sessionDuration,
+          ended_by_user: true,
+        });
+      }
 
       // End Tavus session if active
       if (sessionData?.session_id && tavusApiKey) {
@@ -314,7 +341,7 @@ export function useTavusVideo() {
       }
 
       // Update database record
-      if (user && sessionData?.session_id) {
+      if (user && currentVideoSessionId) {
         try {
           await withRetry(async () => {
             const { error } = await supabase
@@ -323,7 +350,7 @@ export function useTavusVideo() {
                 ended_at: new Date().toISOString(),
                 duration_seconds: sessionDuration,
               })
-              .eq('session_id', sessionData.session_id)
+              .eq('id', currentVideoSessionId)
               .eq('user_id', user.id);
 
             if (error) {
@@ -331,6 +358,15 @@ export function useTavusVideo() {
               if (!isJWTError) throw error;
             }
           });
+
+          // Generate session report after ending
+          setTimeout(async () => {
+            try {
+              await generateSessionReport(currentVideoSessionId);
+            } catch (error) {
+              console.warn('Failed to generate session report:', error);
+            }
+          }, 1000);
         } catch (error) {
           console.warn('Failed to update session in database:', error);
         }
@@ -342,6 +378,7 @@ export function useTavusVideo() {
       
       setIsSessionActive(false);
       setSessionData(null);
+      setCurrentVideoSessionId(null);
       setError(null);
       
       toast.success('Video session ended');
@@ -351,7 +388,7 @@ export function useTavusVideo() {
     } finally {
       setIsLoading(false);
     }
-  }, [sessionData, tavusApiKey, user, sessionDuration, stopLocalVideo, stopTimer, withRetry, handleSupabaseError]);
+  }, [sessionData, tavusApiKey, user, sessionDuration, currentVideoSessionId, stopLocalVideo, stopTimer, withRetry, handleSupabaseError, trackSessionEvent, generateSessionReport]);
 
   const toggleVideo = useCallback(async (enabled: boolean) => {
     if (localStreamRef.current) {
