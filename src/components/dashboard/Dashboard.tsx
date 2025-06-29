@@ -40,7 +40,7 @@ const FloatingElement = ({ children, delay }: { children: React.ReactNode; delay
 
 export function Dashboard() {
   const { user, handleSupabaseError } = useAuth();
-  const { isOnline, isSupabaseConnected } = useNetworkStatus();
+  const { isOnline, isSupabaseConnected, withRetry } = useNetworkStatus();
   const { currentStreak, getStreakEmoji, loading: streakLoading } = useMoodStreak();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -85,63 +85,74 @@ export function Dashboard() {
     try {
       setError(null);
       
-      // Load data sequentially to avoid overwhelming the connection
+      // Load data with better error handling
       console.log('Loading dashboard stats...');
       
       // Load tasks data
-      const { data: taskData, error: taskError } = await supabase
-        .from('tasks')
-        .select('completed')
-        .eq('user_id', user.id)
-        .limit(100); // Limit to prevent large queries
+      const taskData = await withRetry(async () => {
+        const { data, error } = await supabase
+          .from('tasks')
+          .select('completed')
+          .eq('user_id', user.id)
+          .limit(100);
 
-      if (taskError) {
-        const isJWTError = await handleSupabaseError(taskError);
-        if (!isJWTError) {
-          console.error('Task loading error:', taskError);
-          throw new Error('Failed to load tasks');
+        if (error) {
+          const isJWTError = await handleSupabaseError(error);
+          if (!isJWTError) throw error;
+          return null;
         }
-        return;
-      }
+
+        return data;
+      });
 
       // Small delay to prevent request flooding
       await new Promise(resolve => setTimeout(resolve, 100));
 
       // Load mood data
       const today = new Date().toISOString().split('T')[0];
-      const { data: moodData, error: moodError } = await supabase
-        .from('mood_entries')
-        .select('mood')
-        .eq('user_id', user.id)
-        .gte('created_at', today)
-        .order('created_at', { ascending: false })
-        .limit(1);
+      const moodData = await withRetry(async () => {
+        const { data, error } = await supabase
+          .from('mood_entries')
+          .select('mood')
+          .eq('user_id', user.id)
+          .gte('created_at', today)
+          .order('created_at', { ascending: false })
+          .limit(1);
 
-      if (moodError) {
-        const isJWTError = await handleSupabaseError(moodError);
-        if (!isJWTError) {
-          console.error('Mood loading error:', moodError);
-          // Don't throw, just log the error
+        if (error) {
+          const isJWTError = await handleSupabaseError(error);
+          if (!isJWTError) {
+            console.error('Mood loading error:', error);
+            return null;
+          }
+          throw error;
         }
-      }
+
+        return data;
+      });
 
       // Small delay to prevent request flooding
       await new Promise(resolve => setTimeout(resolve, 100));
 
       // Load voice sessions data
-      const { data: voiceData, error: voiceError } = await supabase
-        .from('chat_sessions')
-        .select('id')
-        .eq('user_id', user.id)
-        .limit(50); // Limit to prevent large queries
+      const voiceData = await withRetry(async () => {
+        const { data, error } = await supabase
+          .from('chat_sessions')
+          .select('id')
+          .eq('user_id', user.id)
+          .limit(50);
 
-      if (voiceError) {
-        const isJWTError = await handleSupabaseError(voiceError);
-        if (!isJWTError) {
-          console.error('Voice sessions loading error:', voiceError);
-          // Don't throw, just log the error
+        if (error) {
+          const isJWTError = await handleSupabaseError(error);
+          if (!isJWTError) {
+            console.error('Voice sessions loading error:', error);
+            return null;
+          }
+          throw error;
         }
-      }
+
+        return data;
+      });
 
       setStats({
         totalTasks: taskData?.length || 0,
@@ -158,16 +169,16 @@ export function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, [user, handleSupabaseError, isSupabaseConnected, dataLoaded]);
+  }, [user, handleSupabaseError, isSupabaseConnected, dataLoaded, withRetry]);
 
   useEffect(() => {
-    if (user && !dataLoaded) {
+    if (user && !dataLoaded && isSupabaseConnected) {
       loadStats();
     } else if (!user) {
       setLoading(false);
       setDataLoaded(false);
     }
-  }, [user, loadStats, dataLoaded]);
+  }, [user, loadStats, dataLoaded, isSupabaseConnected]);
 
   const handleQuickAction = async (action: string) => {
     try {

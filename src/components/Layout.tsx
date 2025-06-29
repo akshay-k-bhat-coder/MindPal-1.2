@@ -15,10 +15,12 @@ import {
   RefreshCw,
   Sparkles,
   Zap,
-  Star
+  Star,
+  AlertTriangle
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
+import { isSupabaseConfigured } from '../lib/supabase';
 import toast from 'react-hot-toast';
 
 const FloatingIcon = ({ icon: Icon, delay }: { icon: any; delay: number }) => (
@@ -44,13 +46,15 @@ const FloatingIcon = ({ icon: Icon, delay }: { icon: any; delay: number }) => (
 
 export function Layout() {
   const { user, signOut } = useAuth();
-  const { isOnline, isSupabaseConnected, checkConnection } = useNetworkStatus();
+  const { isOnline, isSupabaseConnected, checkConnection, isChecking } = useNetworkStatus();
   const location = useLocation();
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const { scrollY } = useScroll();
   
   const headerY = useTransform(scrollY, [0, 100], [0, -50]);
   const headerOpacity = useTransform(scrollY, [0, 100], [1, 0.8]);
+
+  const isConfigured = isSupabaseConfigured();
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -71,13 +75,20 @@ export function Layout() {
   };
 
   const handleRetryConnection = async () => {
-    toast.loading('Checking connection...', { id: 'retry-connection' });
-    const isConnected = await checkConnection();
+    if (isChecking) return;
     
-    if (isConnected) {
-      toast.success('Connection restored! 🎉', { id: 'retry-connection' });
-    } else {
-      toast.error('Still having connection issues', { id: 'retry-connection' });
+    toast.loading('Checking connection...', { id: 'retry-connection' });
+    
+    try {
+      const isConnected = await checkConnection();
+      
+      if (isConnected) {
+        toast.success('Connection restored! 🎉', { id: 'retry-connection' });
+      } else {
+        toast.error('Still having connection issues', { id: 'retry-connection' });
+      }
+    } catch (error) {
+      toast.error('Connection check failed', { id: 'retry-connection' });
     }
   };
 
@@ -90,7 +101,7 @@ export function Layout() {
     { icon: Settings, label: 'Settings', path: '/settings', color: 'from-gray-500 to-slate-500' },
   ];
 
-  const showNetworkBanner = !isOnline || !isSupabaseConnected;
+  const showNetworkBanner = !isOnline || !isSupabaseConnected || !isConfigured;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 relative overflow-hidden">
@@ -134,7 +145,9 @@ export function Layout() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -50 }}
             className={`relative z-50 ${
-              !isOnline 
+              !isConfigured
+                ? 'bg-gradient-to-r from-orange-600 to-red-600'
+                : !isOnline 
                 ? 'bg-gradient-to-r from-red-600 to-red-700' 
                 : 'bg-gradient-to-r from-yellow-600 to-orange-600'
             } text-white px-4 py-3 text-center text-sm font-medium shadow-lg`}
@@ -144,27 +157,34 @@ export function Layout() {
                 animate={{ rotate: 360 }}
                 transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
               >
-                {!isOnline ? (
+                {!isConfigured ? (
+                  <AlertTriangle className="h-4 w-4" />
+                ) : !isOnline ? (
                   <WifiOff className="h-4 w-4" />
                 ) : (
                   <Wifi className="h-4 w-4" />
                 )}
               </motion.div>
               <span>
-                {!isOnline 
+                {!isConfigured
+                  ? 'Supabase not configured - Please check your environment variables'
+                  : !isOnline 
                   ? 'No internet connection - Some features may not work'
                   : 'Connection issues with server - Data may not sync properly'
                 }
               </span>
-              <motion.button
-                onClick={handleRetryConnection}
-                className="bg-white/20 hover:bg-white/30 px-3 py-1 rounded-full text-xs transition-colors duration-200 flex items-center space-x-1"
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                <RefreshCw className="h-3 w-3" />
-                <span>Retry</span>
-              </motion.button>
+              {isConfigured && (
+                <motion.button
+                  onClick={handleRetryConnection}
+                  disabled={isChecking}
+                  className="bg-white/20 hover:bg-white/30 px-3 py-1 rounded-full text-xs transition-colors duration-200 flex items-center space-x-1 disabled:opacity-50"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <RefreshCw className={`h-3 w-3 ${isChecking ? 'animate-spin' : ''}`} />
+                  <span>{isChecking ? 'Checking...' : 'Retry'}</span>
+                </motion.button>
+              )}
             </div>
           </motion.div>
         )}
