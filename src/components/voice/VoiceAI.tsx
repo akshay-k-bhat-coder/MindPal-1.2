@@ -22,7 +22,6 @@ import { useAuth } from '../../hooks/useAuth';
 import { useSettings } from '../../hooks/useSettings';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { useVoice } from '../../hooks/useVoice';
-import { useChatSessions } from '../../hooks/useChatSessions';
 import toast from 'react-hot-toast';
 
 const getGeminiResponse = async (input: string, personality: string, conversationHistory: string = ''): Promise<string> => {
@@ -65,7 +64,7 @@ const getGeminiResponse = async (input: string, personality: string, conversatio
 
 const generateAIReport = async (messages: any[]): Promise<any> => {
   try {
-    const userMessages = messages.filter(m => m.message_type === 'user').map(m => m.content).join(' ');
+    const userMessages = messages.filter(m => m.type === 'user').map(m => m.content).join(' ');
     
     const reportPrompt = `Analyze the following conversation and provide a detailed psychological and emotional report in JSON format:
 
@@ -155,7 +154,7 @@ const translateText = async (text: string, targetLang: string, sourceLang: strin
 export function VoiceAI() {
   const { user } = useAuth();
   const { settings } = useSettings();
-  const { isOnline, isConnectedToSupabase } = useNetworkStatus();
+  const { isOnline } = useNetworkStatus();
   const {
     textToSpeech,
     stopSpeech,
@@ -166,31 +165,18 @@ export function VoiceAI() {
     isVoiceEnabled,
     stopSpeechRecognition,
   } = useVoice();
-  const {
-    sessions,
-    currentSession,
-    messages,
-    setCurrentSession,
-    loadMessages,
-    createNewSession,
-    addMessage,
-    deleteSession,
-    updateSessionTitle,
-    shareChatSession,
-  } = useChatSessions();
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [textInput, setTextInput] = useState('');
-  const [showSessions, setShowSessions] = useState(false);
-  const [editingTitle, setEditingTitle] = useState<string | null>(null);
   const [moodReport, setMoodReport] = useState<any>(null);
   const [autoSpeak, setAutoSpeak] = useState(true);
   const [continuousMode, setContinuousMode] = useState(false);
+  const [currentMessages, setCurrentMessages] = useState<Array<{id: string, type: 'user' | 'ai', content: string, timestamp: Date}>>([]);
   const continuousRef = useRef(false);
 
   const isSpeechRecognitionSupported = 'webkitSpeechRecognition' in window || 'SpeechRecognition' in window;
   const canUseVoice = isOnline && isSpeechRecognitionSupported && isVoiceEnabled;
-  const canUseAI = isOnline && isConnectedToSupabase;
+  const canUseAI = isOnline;
 
   // Cleanup on unmount
   useEffect(() => {
@@ -249,16 +235,8 @@ export function VoiceAI() {
     if (!input.trim() || !user) return;
     
     if (!canUseAI) {
-      toast.error('Cannot send message - no connection to server');
+      toast.error('Cannot send message - no internet connection');
       return;
-    }
-    
-    let sessionToUse = currentSession;
-    
-    // Create new session if none exists
-    if (!sessionToUse) {
-      sessionToUse = await createNewSession();
-      if (!sessionToUse) return;
     }
     
     setIsProcessing(true);
@@ -269,13 +247,20 @@ export function VoiceAI() {
       if (settings.language && settings.language !== 'en') {
         translatedInput = await translateText(input, 'en', settings.language);
       }
-      // Add user message (in original language)
-      await addMessage(sessionToUse.id, 'user', input);
       
-      // Get conversation history for context
-      const conversationHistory = messages
+      // Add user message to current session (temporary, not saved)
+      const userMessage = {
+        id: Date.now().toString(),
+        type: 'user' as const,
+        content: input,
+        timestamp: new Date()
+      };
+      setCurrentMessages(prev => [...prev, userMessage]);
+      
+      // Get conversation history for context (only from current session)
+      const conversationHistory = currentMessages
         .slice(-10) // Last 10 messages for context
-        .map(m => `${m.message_type === 'user' ? 'User' : 'AI'}: ${m.content}`)
+        .map(m => `${m.type === 'user' ? 'User' : 'AI'}: ${m.content}`)
         .join('\n');
       
       // Get AI response with context (in English)
@@ -286,8 +271,15 @@ export function VoiceAI() {
       if (settings.language && settings.language !== 'en') {
         finalResponse = await translateText(aiResponse, settings.language, 'en');
       }
-      // Add AI response (in user's language)
-      await addMessage(sessionToUse.id, 'ai', finalResponse);
+      
+      // Add AI response to current session (temporary, not saved)
+      const aiMessage = {
+        id: (Date.now() + 1).toString(),
+        type: 'ai' as const,
+        content: finalResponse,
+        timestamp: new Date()
+      };
+      setCurrentMessages(prev => [...prev, aiMessage]);
       
       // Speak the AI response if auto-speak is enabled or explicitly requested
       if ((autoSpeak || shouldSpeak) && isVoiceEnabled) {
@@ -334,31 +326,25 @@ export function VoiceAI() {
     }
   };
 
-  const handleSessionSelect = async (session: any) => {
-    setCurrentSession(session);
-    await loadMessages(session.id);
-    setShowSessions(false);
-  };
-
-  const handleNewChat = async () => {
-    await createNewSession();
-    setShowSessions(false);
+  const handleNewChat = () => {
+    setCurrentMessages([]);
+    toast.success('New conversation started');
   };
 
   const handleGenerateReport = async () => {
-    if (!currentSession || messages.length === 0) {
+    if (currentMessages.length === 0) {
       toast.error('No conversation to analyze');
       return;
     }
 
     if (!canUseAI) {
-      toast.error('Cannot generate report - no connection to server');
+      toast.error('Cannot generate report - no internet connection');
       return;
     }
     
     try {
       setIsProcessing(true);
-      const report = await generateAIReport(messages);
+      const report = await generateAIReport(currentMessages);
       setMoodReport(report);
       toast.success('AI report generated successfully!');
     } catch (error) {
@@ -366,41 +352,6 @@ export function VoiceAI() {
       toast.error('Failed to generate report');
     } finally {
       setIsProcessing(false);
-    }
-  };
-
-  const handleTitleUpdate = async (sessionId: string, newTitle: string) => {
-    await updateSessionTitle(sessionId, newTitle);
-    setEditingTitle(null);
-  };
-
-  const handleShareChat = async (sessionId: string) => {
-    try {
-      const session = sessions.find(s => s.id === sessionId);
-      if (!session) return;
-
-      // Get messages for this session
-      const sessionMessages = messages.filter(m => m.session_id === sessionId);
-      
-      // Format as readable text
-      const chatText = sessionMessages
-        .map(m => `${m.message_type === 'user' ? 'You' : 'AI'}: ${m.content}`)
-        .join('\n\n');
-      
-      const shareText = `MindPal Chat: ${session.title}\n\n${chatText}`;
-
-      if (navigator.share) {
-        await navigator.share({
-          title: `MindPal Chat: ${session.title}`,
-          text: shareText,
-        });
-      } else {
-        await navigator.clipboard.writeText(shareText);
-        toast.success('Chat copied to clipboard!');
-      }
-    } catch (error) {
-      console.error('Error sharing session:', error);
-      toast.error('Failed to share session');
     }
   };
 
@@ -415,6 +366,11 @@ export function VoiceAI() {
     } else {
       await textToSpeech(content);
     }
+  };
+
+  const clearCurrentSession = () => {
+    setCurrentMessages([]);
+    toast.success('Conversation cleared');
   };
 
   return (
@@ -434,12 +390,13 @@ export function VoiceAI() {
           {continuousMode ? 'Stop Voice Chat' : 'Start Voice Chat'}
         </button>
       </div>
+      
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Voice AI Companion</h1>
           <p className="text-gray-600 dark:text-gray-300">
-            {currentSession ? `Chat: ${currentSession.title}` : 'Start a new conversation'}
+            Private voice conversations (not saved)
           </p>
         </div>
         <div className="flex items-center space-x-3">
@@ -464,17 +421,8 @@ export function VoiceAI() {
             )}
           </div>
           <button
-            onClick={() => setShowSessions(!showSessions)}
-            disabled={!canUseAI}
-            className="bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 px-4 py-2 rounded-xl hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors duration-200 flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <MessageCircle className="h-4 w-4" />
-            <span>Chats</span>
-          </button>
-          <button
             onClick={handleNewChat}
-            disabled={!canUseAI}
-            className="bg-gradient-to-r from-purple-600 to-blue-600 text-white px-4 py-2 rounded-xl hover:shadow-lg transition-all duration-200 flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="bg-gradient-to-r from-purple-600 to-blue-600 text-white px-4 py-2 rounded-xl hover:shadow-lg transition-all duration-200 flex items-center space-x-2"
           >
             <Plus className="h-4 w-4" />
             <span>New Chat</span>
@@ -483,7 +431,7 @@ export function VoiceAI() {
       </div>
 
       {/* Connection Status Warning */}
-      {(!isOnline || !isConnectedToSupabase || !isVoiceEnabled) && (
+      {(!isOnline || !isVoiceEnabled) && (
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -497,15 +445,11 @@ export function VoiceAI() {
             )}
             <div>
               <p className="font-medium text-yellow-800 dark:text-yellow-300">
-                {!isOnline ? 'No Internet Connection' : 
-                 !isConnectedToSupabase ? 'Server Connection Issues' : 
-                 'Voice Features Limited'}
+                {!isOnline ? 'No Internet Connection' : 'Voice Features Limited'}
               </p>
               <p className="text-sm text-yellow-700 dark:text-yellow-400">
                 {!isOnline 
                   ? 'Voice recognition and AI chat are unavailable without internet access.'
-                  : !isConnectedToSupabase
-                  ? 'AI chat and data sync may not work properly. Please check your connection.'
                   : 'ElevenLabs API key not configured. Text-to-speech features unavailable.'
                 }
               </p>
@@ -513,97 +457,6 @@ export function VoiceAI() {
           </div>
         </motion.div>
       )}
-
-      {/* Sessions Sidebar */}
-      <AnimatePresence>
-        {showSessions && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700"
-          >
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Chat Sessions</h3>
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {sessions.map((session) => (
-                <div
-                  key={session.id}
-                  className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors duration-200 ${
-                    currentSession?.id === session.id
-                      ? 'bg-purple-100 dark:bg-purple-900/30'
-                      : 'hover:bg-gray-100 dark:hover:bg-gray-700'
-                  }`}
-                >
-                  <div className="flex-1" onClick={() => handleSessionSelect(session)}>
-                    {editingTitle === session.id ? (
-                      <input
-                        type="text"
-                        defaultValue={session.title}
-                        className="w-full bg-transparent border-none focus:outline-none text-gray-900 dark:text-white"
-                        onBlur={(e) => handleTitleUpdate(session.id, e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            handleTitleUpdate(session.id, e.currentTarget.value);
-                          }
-                        }}
-                        autoFocus
-                      />
-                    ) : (
-                      <div>
-                        <p className="font-medium text-gray-900 dark:text-white">{session.title}</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          {new Date(session.updated_at).toLocaleDateString()}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div className="flex items-center space-x-1">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingTitle(editingTitle === session.id ? null : session.id);
-                      }}
-                      className="text-gray-400 hover:text-blue-500 transition-colors duration-200"
-                      title="Edit title"
-                    >
-                      <Edit3 className="h-4 w-4" />
-                    </button>
-                    
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleShareChat(session.id);
-                      }}
-                      className="text-gray-400 hover:text-green-500 transition-colors duration-200"
-                      title="Share chat"
-                    >
-                      <Share2 className="h-4 w-4" />
-                    </button>
-                    
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteSession(session.id);
-                      }}
-                      className="text-gray-400 hover:text-red-500 transition-colors duration-200"
-                      title="Delete chat"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-              
-              {sessions.length === 0 && (
-                <p className="text-gray-500 dark:text-gray-400 text-center py-4">
-                  No chat sessions yet. Start your first conversation!
-                </p>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* Chat Interface */}
       <motion.div
@@ -614,32 +467,32 @@ export function VoiceAI() {
         {/* Chat Messages */}
         <div className="p-6 pb-0">
           <div className="max-h-96 overflow-y-auto space-y-4 mb-4">
-            {messages.length === 0 && !currentSession && (
+            {currentMessages.length === 0 && (
               <div className="text-center text-gray-400 dark:text-gray-500 py-8">
                 <Brain className="h-12 w-12 mx-auto mb-4 text-gray-300 dark:text-gray-600" />
-                <p>Start a new conversation or select an existing chat!</p>
+                <p>Start a private conversation! Messages are not saved.</p>
                 {!canUseAI && (
                   <p className="text-sm mt-2 text-yellow-600 dark:text-yellow-400">
-                    Connection required for AI features
+                    Internet connection required for AI features
                   </p>
                 )}
               </div>
             )}
             
-            {messages.map((message) => (
-              <div key={message.id} className={`flex ${message.message_type === 'user' ? 'justify-end' : 'justify-start'}`}>
+            {currentMessages.map((message) => (
+              <div key={message.id} className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div className={`max-w-xs sm:max-w-md lg:max-w-lg px-4 py-3 rounded-2xl break-words ${
-                  message.message_type === 'user' 
+                  message.type === 'user' 
                     ? 'bg-purple-600 text-white ml-8' 
                     : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white mr-8 border border-gray-200 dark:border-gray-700'
                 }`}>
                   <div className="flex items-start space-x-2">
-                    {message.message_type === 'ai' && (
+                    {message.type === 'ai' && (
                       <Brain className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
                     )}
                     <div className="flex-1">
                       <p className="text-sm">{message.content}</p>
-                      {message.message_type === 'ai' && isVoiceEnabled && (
+                      {message.type === 'ai' && isVoiceEnabled && (
                         <button
                           onClick={() => handleSpeakMessage(message.content)}
                           className="mt-2 text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors duration-200 flex items-center space-x-1"
@@ -675,7 +528,7 @@ export function VoiceAI() {
                   value={textInput}
                   onChange={(e) => setTextInput(e.target.value)}
                   className="w-full px-4 py-3 rounded-xl border border-purple-200 dark:border-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-400 bg-white dark:bg-gray-800 text-gray-900 dark:text-white disabled:opacity-50"
-                  placeholder={canUseAI ? "Type your message..." : "Connection required for messaging"}
+                  placeholder={canUseAI ? "Type your message..." : "Internet connection required for messaging"}
                   disabled={isProcessing || isRecording || !canUseAI}
                 />
                 <button
@@ -703,16 +556,27 @@ export function VoiceAI() {
                   <span className="hidden sm:inline">{isRecording ? 'Listening...' : 'Voice'}</span>
                 </button>
                 
-                {currentSession && messages.length > 0 && (
-                  <button
-                    onClick={handleGenerateReport}
-                    disabled={isProcessing || !canUseAI}
-                    className="bg-green-600 hover:bg-green-700 text-white px-4 py-3 rounded-xl transition-all duration-200 flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Generate AI mood report"
-                  >
-                    <FileText className="h-5 w-5" />
-                    <span className="hidden sm:inline">Report</span>
-                  </button>
+                {currentMessages.length > 0 && (
+                  <>
+                    <button
+                      onClick={handleGenerateReport}
+                      disabled={isProcessing || !canUseAI}
+                      className="bg-green-600 hover:bg-green-700 text-white px-4 py-3 rounded-xl transition-all duration-200 flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Generate AI mood report"
+                    >
+                      <FileText className="h-5 w-5" />
+                      <span className="hidden sm:inline">Report</span>
+                    </button>
+                    
+                    <button
+                      onClick={clearCurrentSession}
+                      className="bg-red-600 hover:bg-red-700 text-white px-4 py-3 rounded-xl transition-all duration-200 flex items-center space-x-2"
+                      title="Clear conversation"
+                    >
+                      <Trash2 className="h-5 w-5" />
+                      <span className="hidden sm:inline">Clear</span>
+                    </button>
+                  </>
                 )}
               </div>
             </div>
@@ -837,17 +701,15 @@ export function VoiceAI() {
       </AnimatePresence>
 
       {/* Privacy Notice */}
-      {settings.voice_recordings && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4"
-        >
-          <p className="text-sm text-blue-800 dark:text-blue-300">
-            🔒 Your conversations are encrypted and stored securely. AI remembers context within each chat session. Voice synthesis powered by ElevenLabs. You can disable voice recording storage in Settings.
-          </p>
-        </motion.div>
-      )}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4"
+      >
+        <p className="text-sm text-blue-800 dark:text-blue-300">
+          🔒 <strong>Privacy First:</strong> Your voice conversations are completely private and not saved to any database. Only temporary session data is kept in memory for context during your current conversation. Voice synthesis powered by ElevenLabs.
+        </p>
+      </motion.div>
     </div>
   );
 }
