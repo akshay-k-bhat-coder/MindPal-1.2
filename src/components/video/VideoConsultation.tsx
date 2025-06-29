@@ -15,7 +15,8 @@ import {
   Shield,
   RefreshCw,
   ExternalLink,
-  AlertTriangle
+  AlertTriangle,
+  Trash2
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useSettings } from '../../hooks/useSettings';
@@ -36,7 +37,9 @@ export function VideoConsultation() {
     endSession,
     isLoading,
     error: tavusError,
-    formatDuration
+    formatDuration,
+    forceEndLingeringSession,
+    isForceEndingSession
   } = useTavusVideo();
 
   const [isVideoEnabled, setIsVideoEnabled] = useState(true);
@@ -51,6 +54,9 @@ export function VideoConsultation() {
 
   const maxSessionTime = 3600; // 60 minutes for all users
   const timeRemaining = Math.max(0, maxSessionTime - sessionDuration);
+
+  // Check if the error is about an active session
+  const isActiveSessionError = tavusError && tavusError.includes('already have an active video session');
 
   // Default replica ID - this should be configured based on personality
   const getReplicaId = (personality: string) => {
@@ -171,6 +177,16 @@ export function VideoConsultation() {
     } catch (error) {
       console.error('Failed to end session:', error);
       toast.error('Failed to end session properly');
+    }
+  };
+
+  const handleForceEndLingering = async () => {
+    const success = await forceEndLingeringSession();
+    if (success) {
+      // Clear the error after successfully clearing lingering sessions
+      setTimeout(() => {
+        // The error will be cleared when the user tries to start a new session
+      }, 1000);
     }
   };
 
@@ -560,11 +576,27 @@ export function VideoConsultation() {
           animate={{ opacity: 1, y: 0 }}
           className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4"
         >
-          <div className="flex items-center space-x-3">
-            <Shield className="h-5 w-5 text-red-600 dark:text-red-400" />
-            <div>
+          <div className="flex items-start space-x-3">
+            <Shield className="h-5 w-5 text-red-600 dark:text-red-400 mt-1" />
+            <div className="flex-1">
               <p className="font-medium text-red-800 dark:text-red-300">Session Error</p>
-              <p className="text-sm text-red-700 dark:text-red-400">{tavusError}</p>
+              <p className="text-sm text-red-700 dark:text-red-400 mb-3">{tavusError}</p>
+              
+              {/* Show clear lingering sessions button for active session errors */}
+              {isActiveSessionError && (
+                <button
+                  onClick={handleForceEndLingering}
+                  disabled={isForceEndingSession}
+                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200 flex items-center space-x-2 disabled:opacity-50"
+                >
+                  {isForceEndingSession ? (
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-4 w-4" />
+                  )}
+                  <span>{isForceEndingSession ? 'Clearing...' : 'Clear Lingering Sessions'}</span>
+                </button>
+              )}
             </div>
           </div>
         </motion.div>

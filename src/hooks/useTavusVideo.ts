@@ -24,6 +24,7 @@ export function useTavusVideo() {
   const [isLoading, setIsLoading] = useState(false);
   const [sessionDuration, setSessionDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [isForceEndingSession, setIsForceEndingSession] = useState(false);
   
   const sessionTimerRef = useRef<NodeJS.Timeout | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -78,6 +79,80 @@ export function useTavusVideo() {
       localStreamRef.current = null;
     }
   }, []);
+
+  // Force end lingering session
+  const forceEndLingeringSession = useCallback(async (): Promise<boolean> => {
+    if (!user || !tavusApiKey) {
+      return false;
+    }
+
+    try {
+      setIsForceEndingSession(true);
+      setError(null);
+
+      // Query for any un-ended sessions for this user
+      const { data: sessions, error: queryError } = await supabase
+        .from('video_sessions')
+        .select('*')
+        .eq('user_id', user.id)
+        .is('ended_at', null)
+        .order('created_at', { ascending: false });
+
+      if (queryError) {
+        console.error('Error querying sessions:', queryError);
+        return false;
+      }
+
+      if (!sessions || sessions.length === 0) {
+        toast.info('No lingering sessions found in database');
+        return true;
+      }
+
+      // Attempt to end each lingering session
+      for (const session of sessions) {
+        try {
+          // Try to end the session via Tavus API
+          if (session.conversation_id) {
+            await fetch(`https://tavusapi.com/v2/conversations/${session.conversation_id}/end`, {
+              method: 'POST',
+              headers: {
+                'x-api-key': tavusApiKey,
+              },
+            });
+          }
+        } catch (error) {
+          console.warn(`Failed to end Tavus session ${session.conversation_id}:`, error);
+          // Continue with database cleanup even if API call fails
+        }
+
+        // Update the database record to mark as ended
+        try {
+          const sessionStartTime = new Date(session.created_at).getTime();
+          const currentTime = Date.now();
+          const calculatedDuration = Math.floor((currentTime - sessionStartTime) / 1000);
+
+          await supabase
+            .from('video_sessions')
+            .update({
+              ended_at: new Date().toISOString(),
+              duration_seconds: calculatedDuration,
+            })
+            .eq('id', session.id);
+        } catch (error) {
+          console.warn(`Failed to update session ${session.id} in database:`, error);
+        }
+      }
+
+      toast.success(`Cleared ${sessions.length} lingering session(s)`);
+      return true;
+    } catch (error) {
+      console.error('Error force ending lingering sessions:', error);
+      toast.error('Failed to clear lingering sessions');
+      return false;
+    } finally {
+      setIsForceEndingSession(false);
+    }
+  }, [user, tavusApiKey]);
 
   // Tavus API calls
   const createSession = useCallback(async (config: TavusConfig): Promise<TavusSession | null> => {
@@ -319,12 +394,14 @@ export function useTavusVideo() {
     sessionDuration,
     error,
     isVideoEnabled,
+    isForceEndingSession,
     
     // Actions
     startSession,
     endSession,
     toggleVideo,
     toggleAudio,
+    forceEndLingeringSession,
     
     // Refs
     videoRef,
