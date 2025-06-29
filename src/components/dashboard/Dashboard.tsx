@@ -328,7 +328,7 @@ export function Dashboard() {
             animate={{ scale: 1 }}
             transition={{ delay: 0.2, duration: 0.6 }}
           >
-            Welcome back, {user?.email?.split('@')[0]}!
+            Welcome back, {user?.name}!
           </motion.h1>
           <motion.p
             className="text-white/60 text-xl"
