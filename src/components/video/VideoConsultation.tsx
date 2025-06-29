@@ -13,7 +13,9 @@ import {
   Wifi,
   WifiOff,
   Shield,
-  RefreshCw
+  RefreshCw,
+  ExternalLink,
+  AlertTriangle
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useSettings } from '../../hooks/useSettings';
@@ -45,6 +47,7 @@ export function VideoConsultation() {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [mediaPermissionError, setMediaPermissionError] = useState<string | null>(null);
   const [showPermissionModal, setShowPermissionModal] = useState(false);
+  const [showVideoModal, setShowVideoModal] = useState(false);
 
   const maxSessionTime = 3600; // 60 minutes for all users
   const timeRemaining = Math.max(0, maxSessionTime - sessionDuration);
@@ -142,8 +145,12 @@ export function VideoConsultation() {
       cleanupLocalStream();
       
       const replicaId = getReplicaId(selectedPersonality);
-      await startSession(replicaId, maxSessionTime);
-      toast.success('Video consultation started!');
+      const success = await startSession(replicaId, maxSessionTime);
+      
+      if (success) {
+        toast.success('Video consultation started!');
+        setShowVideoModal(true);
+      }
     } catch (error) {
       console.error('Failed to start session:', error);
       toast.error('Failed to start video session');
@@ -155,6 +162,7 @@ export function VideoConsultation() {
   const handleEndSession = async () => {
     try {
       await endSession();
+      setShowVideoModal(false);
       toast.success('Video consultation ended');
       // Re-initialize local video after session ends
       setTimeout(() => {
@@ -217,6 +225,13 @@ export function VideoConsultation() {
         }
       }
     }, 500);
+  };
+
+  const openVideoInNewTab = () => {
+    if (sessionData?.session_url) {
+      window.open(sessionData.session_url, '_blank', 'noopener,noreferrer');
+      toast.success('Video session opened in new tab');
+    }
   };
 
   const personalities = [
@@ -292,14 +307,32 @@ export function VideoConsultation() {
             animate={{ opacity: 1, scale: 1 }}
             className="bg-black rounded-2xl overflow-hidden aspect-video relative"
           >
-            {/* AI Video Stream */}
-            {isSessionActive && sessionData?.session_url ? (
-              <iframe
-                src={sessionData.session_url}
-                className="w-full h-full"
-                allow="camera; microphone"
-                title="AI Video Consultation"
-              />
+            {/* AI Video Stream - Show placeholder when session is active */}
+            {isSessionActive ? (
+              <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-900 to-blue-900 relative">
+                <div className="text-center text-white">
+                  <Video className="h-16 w-16 mx-auto mb-4" />
+                  <p className="text-lg font-medium mb-2">AI Video Session Active</p>
+                  <p className="text-sm opacity-75 mb-4">
+                    Due to browser security restrictions, the video opens in a new tab
+                  </p>
+                  <button
+                    onClick={openVideoInNewTab}
+                    className="bg-white/20 hover:bg-white/30 text-white px-6 py-3 rounded-xl font-semibold transition-all duration-200 flex items-center space-x-2 mx-auto"
+                  >
+                    <ExternalLink className="h-5 w-5" />
+                    <span>Open Video Session</span>
+                  </button>
+                </div>
+                
+                {/* Session URL Display */}
+                {sessionData?.session_url && (
+                  <div className="absolute bottom-4 left-4 right-4 bg-black/50 backdrop-blur-sm text-white p-3 rounded-lg">
+                    <p className="text-xs opacity-75 mb-1">Session URL:</p>
+                    <p className="text-sm font-mono break-all">{sessionData.session_url}</p>
+                  </div>
+                )}
+              </div>
             ) : (
               <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-900 to-blue-900">
                 <div className="text-center text-white">
@@ -482,15 +515,34 @@ export function VideoConsultation() {
             </div>
           </motion.div>
 
-          {/* Tips */}
+          {/* Browser Compatibility Notice */}
           <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.2 }}
             className="bg-blue-50 dark:bg-blue-900/20 rounded-2xl p-6 border border-blue-200 dark:border-blue-800"
           >
-            <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-300 mb-3">Tips for Better Sessions</h3>
-            <ul className="space-y-2 text-sm text-blue-800 dark:text-blue-400">
+            <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-300 mb-3 flex items-center space-x-2">
+              <AlertTriangle className="h-5 w-5" />
+              <span>Important Notice</span>
+            </h3>
+            <div className="space-y-2 text-sm text-blue-800 dark:text-blue-400">
+              <p>• Video sessions open in a new tab due to browser security restrictions</p>
+              <p>• Ensure pop-ups are allowed for this site</p>
+              <p>• Use Chrome, Firefox, or Safari for best compatibility</p>
+              <p>• Grant camera and microphone permissions when prompted</p>
+            </div>
+          </motion.div>
+
+          {/* Tips */}
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.3 }}
+            className="bg-green-50 dark:bg-green-900/20 rounded-2xl p-6 border border-green-200 dark:border-green-800"
+          >
+            <h3 className="text-lg font-semibold text-green-900 dark:text-green-300 mb-3">Tips for Better Sessions</h3>
+            <ul className="space-y-2 text-sm text-green-800 dark:text-green-400">
               <li>• Ensure good lighting on your face</li>
               <li>• Use headphones for better audio quality</li>
               <li>• Find a quiet, private space</li>
