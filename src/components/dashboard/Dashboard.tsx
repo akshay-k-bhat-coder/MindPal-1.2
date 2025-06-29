@@ -76,109 +76,101 @@ export function Dashboard() {
   const loadStats = useCallback(async () => {
     if (!user || dataLoaded) return;
 
+    // Don't block the UI if we're not connected
     if (!isSupabaseConnected) {
       setLoading(false);
-      setError('No connection to server');
+      setError(null); // Don't show error for connection issues
       return;
     }
 
     try {
       setError(null);
-      
-      // Load data with better error handling
       console.log('Loading dashboard stats...');
       
-      // Load tasks data
-      const taskData = await withRetry(async () => {
-        const { data, error } = await supabase
-          .from('tasks')
-          .select('completed')
-          .eq('user_id', user.id)
-          .limit(100);
+      // Load all data in parallel with proper error handling
+      const [taskData, moodData, voiceData] = await Promise.allSettled([
+        withRetry(async () => {
+          const { data, error } = await supabase
+            .from('tasks')
+            .select('completed')
+            .eq('user_id', user.id)
+            .limit(100);
 
-        if (error) {
-          const isJWTError = await handleSupabaseError(error);
-          if (!isJWTError) throw error;
-          return null;
-        }
-
-        return data;
-      });
-
-      // Small delay to prevent request flooding
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // Load mood data
-      const today = new Date().toISOString().split('T')[0];
-      const moodData = await withRetry(async () => {
-        const { data, error } = await supabase
-          .from('mood_entries')
-          .select('mood')
-          .eq('user_id', user.id)
-          .gte('created_at', today)
-          .order('created_at', { ascending: false })
-          .limit(1);
-
-        if (error) {
-          const isJWTError = await handleSupabaseError(error);
-          if (!isJWTError) {
-            console.error('Mood loading error:', error);
+          if (error) {
+            const isJWTError = await handleSupabaseError(error);
+            if (!isJWTError) throw error;
             return null;
           }
-          throw error;
-        }
+          return data;
+        }),
+        
+        withRetry(async () => {
+          const today = new Date().toISOString().split('T')[0];
+          const { data, error } = await supabase
+            .from('mood_entries')
+            .select('mood')
+            .eq('user_id', user.id)
+            .gte('created_at', today)
+            .order('created_at', { ascending: false })
+            .limit(1);
 
-        return data;
-      });
-
-      // Small delay to prevent request flooding
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // Load voice sessions data
-      const voiceData = await withRetry(async () => {
-        const { data, error } = await supabase
-          .from('chat_sessions')
-          .select('id')
-          .eq('user_id', user.id)
-          .limit(50);
-
-        if (error) {
-          const isJWTError = await handleSupabaseError(error);
-          if (!isJWTError) {
-            console.error('Voice sessions loading error:', error);
+          if (error) {
+            const isJWTError = await handleSupabaseError(error);
+            if (!isJWTError) throw error;
             return null;
           }
-          throw error;
-        }
+          return data;
+        }),
+        
+        withRetry(async () => {
+          const { data, error } = await supabase
+            .from('chat_sessions')
+            .select('id')
+            .eq('user_id', user.id)
+            .limit(50);
 
-        return data;
-      });
+          if (error) {
+            const isJWTError = await handleSupabaseError(error);
+            if (!isJWTError) throw error;
+            return null;
+          }
+          return data;
+        })
+      ]);
+
+      // Process results
+      const tasks = taskData.status === 'fulfilled' ? taskData.value : null;
+      const mood = moodData.status === 'fulfilled' ? moodData.value : null;
+      const voice = voiceData.status === 'fulfilled' ? voiceData.value : null;
 
       setStats({
-        totalTasks: taskData?.length || 0,
-        completedTasks: taskData?.filter(task => task.completed).length || 0,
-        todayMood: moodData?.[0]?.mood || null,
-        voiceSessions: voiceData?.length || 0,
+        totalTasks: tasks?.length || 0,
+        completedTasks: tasks?.filter(task => task.completed).length || 0,
+        todayMood: mood?.[0]?.mood || null,
+        voiceSessions: voice?.length || 0,
       });
 
       setDataLoaded(true);
       console.log('Dashboard stats loaded successfully');
     } catch (error) {
       console.error('Error loading stats:', error);
-      setError('Some data may not be up to date');
+      // Only show error if it's not a connection issue
+      if (isSupabaseConnected) {
+        setError('Some data may not be up to date');
+      }
     } finally {
       setLoading(false);
     }
   }, [user, handleSupabaseError, isSupabaseConnected, dataLoaded, withRetry]);
 
   useEffect(() => {
-    if (user && !dataLoaded && isSupabaseConnected) {
+    if (user && !dataLoaded) {
       loadStats();
     } else if (!user) {
       setLoading(false);
       setDataLoaded(false);
     }
-  }, [user, loadStats, dataLoaded, isSupabaseConnected]);
+  }, [user, loadStats, dataLoaded]);
 
   const handleQuickAction = async (action: string) => {
     try {
@@ -348,8 +340,8 @@ export function Dashboard() {
         </motion.div>
       </FloatingElement>
 
-      {/* Connection Error Banner */}
-      {(!isOnline || !isSupabaseConnected || error) && (
+      {/* Connection Error Banner - Only show for actual errors */}
+      {error && (
         <FloatingElement delay={0.3}>
           <motion.div
             className="bg-gradient-to-r from-yellow-500/20 to-orange-500/20 backdrop-blur-xl border border-yellow-500/30 rounded-2xl p-6"
@@ -363,25 +355,12 @@ export function Dashboard() {
                   animate={{ rotate: 360 }}
                   transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
                 >
-                  {!isOnline ? (
-                    <WifiOff className="h-6 w-6 text-yellow-400" />
-                  ) : (
-                    <AlertTriangle className="h-6 w-6 text-yellow-400" />
-                  )}
+                  <AlertTriangle className="h-6 w-6 text-yellow-400" />
                 </motion.div>
                 <div>
-                  <p className="font-semibold text-yellow-200">
-                    {!isOnline ? 'No Internet Connection' : 
-                     !isSupabaseConnected ? 'Server Connection Issues' : 
-                     'Data Loading Issues'}
-                  </p>
+                  <p className="font-semibold text-yellow-200">Data Loading Issues</p>
                   <p className="text-sm text-yellow-300/80">
-                    {!isOnline 
-                      ? 'Some features may not work properly without internet access.'
-                      : !isSupabaseConnected
-                      ? 'Cannot connect to Supabase server. Please check your configuration.'
-                      : error || 'Some data may not be up to date. The app will continue to work normally.'
-                    }
+                    {error}. The app will continue to work normally.
                   </p>
                 </div>
               </div>

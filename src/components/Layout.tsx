@@ -26,10 +26,10 @@ import toast from 'react-hot-toast';
 const FloatingIcon = ({ icon: Icon, delay }: { icon: any; delay: number }) => (
   <motion.div
     className="absolute text-purple-300/20"
-    initial={{ y: 100, x: Math.random() * window.innerWidth, opacity: 0 }}
+    initial={{ y: 100, x: Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 800), opacity: 0 }}
     animate={{
       y: -100,
-      x: Math.random() * window.innerWidth,
+      x: Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 800),
       opacity: [0, 1, 0],
       rotate: 360,
     }}
@@ -101,7 +101,8 @@ export function Layout() {
     { icon: Settings, label: 'Settings', path: '/settings', color: 'from-gray-500 to-slate-500' },
   ];
 
-  const showNetworkBanner = !isOnline || !isSupabaseConnected || !isConfigured;
+  // Only show banner for actual issues
+  const showNetworkBanner = !isConfigured || (!isOnline && navigator.onLine === false);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 relative overflow-hidden">
@@ -137,7 +138,7 @@ export function Layout() {
         />
       </div>
 
-      {/* Network Status Banner */}
+      {/* Network Status Banner - Only for real issues */}
       <AnimatePresence>
         {showNetworkBanner && (
           <motion.div
@@ -147,9 +148,7 @@ export function Layout() {
             className={`relative z-50 ${
               !isConfigured
                 ? 'bg-gradient-to-r from-orange-600 to-red-600'
-                : !isOnline 
-                ? 'bg-gradient-to-r from-red-600 to-red-700' 
-                : 'bg-gradient-to-r from-yellow-600 to-orange-600'
+                : 'bg-gradient-to-r from-red-600 to-red-700'
             } text-white px-4 py-3 text-center text-sm font-medium shadow-lg`}
           >
             <div className="flex items-center justify-center space-x-3">
@@ -159,18 +158,14 @@ export function Layout() {
               >
                 {!isConfigured ? (
                   <AlertTriangle className="h-4 w-4" />
-                ) : !isOnline ? (
-                  <WifiOff className="h-4 w-4" />
                 ) : (
-                  <Wifi className="h-4 w-4" />
+                  <WifiOff className="h-4 w-4" />
                 )}
               </motion.div>
               <span>
                 {!isConfigured
                   ? 'Supabase not configured - Please check your environment variables'
-                  : !isOnline 
-                  ? 'No internet connection - Some features may not work'
-                  : 'Connection issues with server - Data may not sync properly'
+                  : 'No internet connection - Some features may not work'
                 }
               </span>
               {isConfigured && (
@@ -270,6 +265,20 @@ export function Layout() {
 
             {/* User Menu */}
             <div className="flex items-center space-x-4">
+              {/* Connection Status Indicator */}
+              <div className="flex items-center space-x-2">
+                <motion.div
+                  className={`w-2 h-2 rounded-full ${
+                    isOnline && isSupabaseConnected ? 'bg-green-400' : 'bg-red-400'
+                  }`}
+                  animate={{ scale: [1, 1.2, 1] }}
+                  transition={{ duration: 2, repeat: Infinity }}
+                />
+                <span className="text-xs text-white/60 hidden sm:block">
+                  {isOnline && isSupabaseConnected ? 'Connected' : 'Offline'}
+                </span>
+              </div>
+              
               <motion.div
                 className="text-sm text-white/80 hidden sm:block"
                 initial={{ opacity: 0 }}
