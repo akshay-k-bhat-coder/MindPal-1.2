@@ -14,12 +14,13 @@ import {
   WifiOff,
   Shield,
   RefreshCw,
-  ExternalLink,
   AlertTriangle,
   Trash2,
   FileText,
   BarChart3,
-  X
+  X,
+  Maximize,
+  Minimize
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useSettings } from '../../hooks/useSettings';
@@ -53,12 +54,13 @@ export function VideoConsultation() {
   const [showSettings, setShowSettings] = useState(false);
   const [selectedPersonality, setSelectedPersonality] = useState(settings.ai_personality);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [mediaPermissionError, setMediaPermissionError] = useState<string | null>(null);
   const [showPermissionModal, setShowPermissionModal] = useState(false);
-  const [showVideoModal, setShowVideoModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [showReportsHistory, setShowReportsHistory] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const maxSessionTime = 3600; // 60 minutes for all users
   const timeRemaining = Math.max(0, maxSessionTime - sessionDuration);
@@ -168,7 +170,6 @@ export function VideoConsultation() {
       
       if (success) {
         toast.success('Video consultation started!');
-        setShowVideoModal(true);
       }
     } catch (error) {
       console.error('Failed to start session:', error);
@@ -181,7 +182,6 @@ export function VideoConsultation() {
   const handleEndSession = async () => {
     try {
       await endSession();
-      setShowVideoModal(false);
       toast.success('Video consultation ended');
       
       // Show the latest report after a short delay
@@ -265,17 +265,14 @@ export function VideoConsultation() {
     }, 500);
   };
 
-  const openVideoInNewTab = () => {
-    if (sessionData?.session_url) {
-      window.open(sessionData.session_url, '_blank', 'noopener,noreferrer');
-      toast.success('Video session opened in new tab');
-    }
-  };
-
   const handleViewReport = (report: any) => {
     setCurrentReport(report);
     setShowReportModal(true);
     setShowReportsHistory(false);
+  };
+
+  const toggleFullscreen = () => {
+    setIsFullscreen(!isFullscreen);
   };
 
   const personalities = [
@@ -349,33 +346,31 @@ export function VideoConsultation() {
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-black rounded-2xl overflow-hidden aspect-video relative"
+            className={`bg-black rounded-2xl overflow-hidden relative transition-all duration-300 ${
+              isFullscreen ? 'fixed inset-4 z-50' : 'aspect-video'
+            }`}
           >
-            {/* AI Video Stream - Show placeholder when session is active */}
-            {isSessionActive ? (
-              <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-900 to-blue-900 relative">
-                <div className="text-center text-white">
-                  <Video className="h-16 w-16 mx-auto mb-4" />
-                  <p className="text-lg font-medium mb-2">AI Video Session Active</p>
-                  <p className="text-sm opacity-75 mb-4">
-                    Due to browser security restrictions, the video opens in a new tab
-                  </p>
-                  <button
-                    onClick={openVideoInNewTab}
-                    className="bg-white/20 hover:bg-white/30 text-white px-6 py-3 rounded-xl font-semibold transition-all duration-200 flex items-center space-x-2 mx-auto"
-                  >
-                    <ExternalLink className="h-5 w-5" />
-                    <span>Open Video Session</span>
-                  </button>
-                </div>
+            {/* AI Video Stream - Embedded directly */}
+            {isSessionActive && sessionData?.session_url ? (
+              <div className="w-full h-full relative">
+                <iframe
+                  ref={iframeRef}
+                  src={sessionData.session_url}
+                  className="w-full h-full border-0"
+                  allow="camera; microphone; autoplay; encrypted-media; fullscreen"
+                  allowFullScreen
+                  title="AI Video Consultation"
+                  sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals"
+                />
                 
-                {/* Session URL Display */}
-                {sessionData?.session_url && (
-                  <div className="absolute bottom-4 left-4 right-4 bg-black/50 backdrop-blur-sm text-white p-3 rounded-lg">
-                    <p className="text-xs opacity-75 mb-1">Session URL:</p>
-                    <p className="text-sm font-mono break-all">{sessionData.session_url}</p>
-                  </div>
-                )}
+                {/* Fullscreen Toggle */}
+                <button
+                  onClick={toggleFullscreen}
+                  className="absolute top-4 right-4 bg-black/50 hover:bg-black/70 text-white p-2 rounded-lg transition-colors duration-200"
+                  title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
+                >
+                  {isFullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
+                </button>
               </div>
             ) : (
               <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-900 to-blue-900">
@@ -583,13 +578,13 @@ export function VideoConsultation() {
           >
             <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-300 mb-3 flex items-center space-x-2">
               <AlertTriangle className="h-5 w-5" />
-              <span>Important Notice</span>
+              <span>Video Session</span>
             </h3>
             <div className="space-y-2 text-sm text-blue-800 dark:text-blue-400">
-              <p>• Video sessions open in a new tab due to browser security restrictions</p>
-              <p>• Ensure pop-ups are allowed for this site</p>
-              <p>• Use Chrome, Firefox, or Safari for best compatibility</p>
+              <p>• Video sessions are embedded directly in the app</p>
               <p>• Grant camera and microphone permissions when prompted</p>
+              <p>• Use Chrome, Firefox, or Safari for best compatibility</p>
+              <p>• Ensure stable internet connection for smooth experience</p>
             </div>
           </motion.div>
 
@@ -719,7 +714,6 @@ export function VideoConsultation() {
                         </div>
                       </div>
                     </div>
-                    <ExternalLink className="h-5 w-5 text-gray-400" />
                   </div>
                 </div>
               ))}
