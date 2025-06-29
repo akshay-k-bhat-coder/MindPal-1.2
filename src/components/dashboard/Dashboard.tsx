@@ -263,7 +263,7 @@ export function Dashboard() {
           animate={{ opacity: 1, y: 0 }}
         >
           <h1 className="text-4xl font-bold bg-gradient-to-r from-white via-purple-200 to-pink-200 bg-clip-text text-transparent mb-2">
-            Welcome back, {user?.name}!
+            Welcome back!
           </h1>
           <p className="text-white/60 text-lg">
             {format(new Date(), 'EEEE, MMMM do, yyyy')}
