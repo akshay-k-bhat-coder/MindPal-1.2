@@ -33,6 +33,7 @@ export function MoodTracker() {
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(true);
   const [editingEntry, setEditingEntry] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const moodEmojis = [
     { emoji: '😭', mood: 1, label: 'Terrible' },
@@ -48,7 +49,10 @@ export function MoodTracker() {
   ];
 
   const loadMoodEntries = useCallback(async () => {
-    if (!user) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
 
     try {
       const { data, error } = await supabase
@@ -75,9 +79,11 @@ export function MoodTracker() {
   }, [user, loadMoodEntries]);
 
   const saveMoodEntry = async () => {
-    if (!user) return;
+    if (!user || saving) return;
 
     try {
+      setSaving(true);
+      
       const { data, error } = await supabase
         .from('mood_entries')
         .insert([
@@ -96,15 +102,17 @@ export function MoodTracker() {
       setMoodEntries([data, ...moodEntries]);
       setNotes('');
       
-      // Refresh streak calculation
+      // Refresh streak calculation with delay to ensure data is committed
       setTimeout(() => {
         refreshStreak();
-      }, 500);
+      }, 1000);
       
       toast.success('Mood saved! 🎉');
     } catch (error) {
       console.error('Error saving mood:', error);
       toast.error('Failed to save mood entry');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -122,10 +130,10 @@ export function MoodTracker() {
 
       setMoodEntries(moodEntries.filter(entry => entry.id !== entryId));
       
-      // Refresh streak calculation
+      // Refresh streak calculation with delay
       setTimeout(() => {
         refreshStreak();
-      }, 500);
+      }, 1000);
       
       toast.success('Mood entry deleted');
     } catch (error) {
@@ -270,10 +278,11 @@ export function MoodTracker() {
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           onClick={saveMoodEntry}
-          className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 px-6 rounded-xl font-semibold hover:shadow-lg transition-all duration-200 flex items-center justify-center space-x-2"
+          disabled={saving}
+          className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 px-6 rounded-xl font-semibold hover:shadow-lg transition-all duration-200 flex items-center justify-center space-x-2 disabled:opacity-50"
         >
           <Save className="h-5 w-5" />
-          <span>Save Mood Entry</span>
+          <span>{saving ? 'Saving...' : 'Save Mood Entry'}</span>
         </motion.button>
       </motion.div>
 

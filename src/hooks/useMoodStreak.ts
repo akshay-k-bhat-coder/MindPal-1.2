@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from './useAuth';
 import { useNetworkStatus } from './useNetworkStatus';
 import { supabase } from '../lib/supabase';
@@ -18,6 +18,10 @@ export function useMoodStreak() {
   const [longestStreak, setLongestStreak] = useState(0);
   const [loading, setLoading] = useState(true);
   const [lastEntryDate, setLastEntryDate] = useState<string | null>(null);
+  
+  // Use refs to prevent infinite re-renders
+  const loadingRef = useRef(false);
+  const subscriptionRef = useRef<any>(null);
 
   const calculateStreak = useCallback((entries: MoodEntry[]) => {
     if (!entries || entries.length === 0) {
@@ -32,7 +36,7 @@ export function useMoodStreak() {
     // Group entries by date (ignore time)
     const entriesByDate = new Map<string, MoodEntry[]>();
     sortedEntries.forEach(entry => {
-      const dateKey = new Date(entry.created_at).toISOString().split('T')[0]; // Use ISO date format
+      const dateKey = new Date(entry.created_at).toISOString().split('T')[0];
       if (!entriesByDate.has(dateKey)) {
         entriesByDate.set(dateKey, []);
       }
@@ -48,12 +52,10 @@ export function useMoodStreak() {
     const today = new Date().toISOString().split('T')[0];
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-    // Check if there's an entry today or yesterday to start the streak
     if (uniqueDates.length > 0) {
       const mostRecentDate = uniqueDates[0];
       
       if (mostRecentDate === today || mostRecentDate === yesterday) {
-        // Start counting from the most recent entry
         let checkDate = new Date(mostRecentDate);
         
         for (let i = 0; i < uniqueDates.length; i++) {
@@ -62,10 +64,8 @@ export function useMoodStreak() {
           
           if (entryDate === expectedDate) {
             currentStreak++;
-            // Move to previous day
             checkDate = new Date(checkDate.getTime() - 24 * 60 * 60 * 1000);
           } else {
-            // Gap found, stop counting
             break;
           }
         }
@@ -77,7 +77,7 @@ export function useMoodStreak() {
     let tempStreak = 0;
     
     if (uniqueDates.length > 0) {
-      tempStreak = 1; // Start with first entry
+      tempStreak = 1;
       
       for (let i = 1; i < uniqueDates.length; i++) {
         const currentDate = new Date(uniqueDates[i]);
@@ -87,16 +87,13 @@ export function useMoodStreak() {
         );
         
         if (dayDifference === 1) {
-          // Consecutive day
           tempStreak++;
         } else {
-          // Gap found, check if this is the longest streak so far
           longestStreak = Math.max(longestStreak, tempStreak);
-          tempStreak = 1; // Reset streak
+          tempStreak = 1;
         }
       }
       
-      // Don't forget to check the final streak
       longestStreak = Math.max(longestStreak, tempStreak);
     }
 
@@ -110,23 +107,21 @@ export function useMoodStreak() {
   }, []);
 
   const loadMoodStreak = useCallback(async () => {
-    if (!user) {
-      setLoading(false);
-      setCurrentStreak(0);
-      setLongestStreak(0);
-      setLastEntryDate(null);
-      return;
-    }
-
-    if (!isSupabaseConnected) {
-      setLoading(false);
+    // Prevent multiple simultaneous loads
+    if (loadingRef.current || !user || !isSupabaseConnected) {
+      if (!user) {
+        setLoading(false);
+        setCurrentStreak(0);
+        setLongestStreak(0);
+        setLastEntryDate(null);
+      }
       return;
     }
 
     try {
+      loadingRef.current = true;
       setLoading(true);
 
-      // Get all mood entries for the user (last 365 days to calculate streaks efficiently)
       const oneYearAgo = new Date();
       oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
 
@@ -153,40 +148,45 @@ export function useMoodStreak() {
         setLongestStreak(streakData.longest);
         setLastEntryDate(streakData.lastEntry);
       } else {
-        // Set defaults if no data
         setCurrentStreak(0);
         setLongestStreak(0);
         setLastEntryDate(null);
       }
     } catch (error) {
       console.error('Error loading mood streak:', error);
-      // Set defaults on error
       setCurrentStreak(0);
       setLongestStreak(0);
       setLastEntryDate(null);
     } finally {
       setLoading(false);
+      loadingRef.current = false;
     }
   }, [user, isSupabaseConnected, withRetry, handleSupabaseError, calculateStreak]);
 
   // Load streak data when component mounts or user changes
   useEffect(() => {
-    if (user) {
+    if (user && isSupabaseConnected) {
       loadMoodStreak();
-    } else {
+    } else if (!user) {
       setLoading(false);
       setCurrentStreak(0);
       setLongestStreak(0);
       setLastEntryDate(null);
     }
-  }, [user, loadMoodStreak]);
+  }, [user, isSupabaseConnected]); // Removed loadMoodStreak from deps to prevent infinite loop
 
   // Set up real-time subscription for mood entries
   useEffect(() => {
+    // Clean up existing subscription
+    if (subscriptionRef.current) {
+      supabase.removeChannel(subscriptionRef.current);
+      subscriptionRef.current = null;
+    }
+
     if (!user || !isSupabaseConnected) return;
 
     const channel = supabase
-      .channel('mood_entries_changes')
+      .channel(`mood_entries_${user.id}`)
       .on(
         'postgres_changes',
         {
@@ -197,18 +197,25 @@ export function useMoodStreak() {
         },
         (payload) => {
           console.log('Mood entry change detected:', payload);
-          // Reload streak calculation when mood entries change
+          // Debounced reload to prevent rapid updates
           setTimeout(() => {
-            loadMoodStreak();
-          }, 500); // Small delay to ensure data is committed
+            if (!loadingRef.current) {
+              loadMoodStreak();
+            }
+          }, 1000);
         }
       )
       .subscribe();
 
+    subscriptionRef.current = channel;
+
     return () => {
-      supabase.removeChannel(channel);
+      if (subscriptionRef.current) {
+        supabase.removeChannel(subscriptionRef.current);
+        subscriptionRef.current = null;
+      }
     };
-  }, [user, isSupabaseConnected, loadMoodStreak]);
+  }, [user, isSupabaseConnected]); // Removed loadMoodStreak from deps
 
   const getStreakStatus = useCallback(() => {
     if (!lastEntryDate) {
@@ -270,6 +277,13 @@ export function useMoodStreak() {
     return '👑';
   }, [currentStreak]);
 
+  // Manual refresh function that can be called externally
+  const refreshStreak = useCallback(() => {
+    if (!loadingRef.current) {
+      loadMoodStreak();
+    }
+  }, [loadMoodStreak]);
+
   return {
     currentStreak,
     longestStreak,
@@ -278,6 +292,6 @@ export function useMoodStreak() {
     getStreakStatus,
     getDaysUntilMilestone,
     getStreakEmoji,
-    refreshStreak: loadMoodStreak
+    refreshStreak
   };
 }

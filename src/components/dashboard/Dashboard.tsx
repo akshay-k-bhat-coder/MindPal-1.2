@@ -251,7 +251,6 @@ export function Dashboard() {
       textColor: 'text-purple-700 dark:text-purple-400',
       glowColor: 'shadow-purple-500/25',
     },
-    
   ];
 
   if (loading && !dataLoaded) {
@@ -471,6 +470,36 @@ export function Dashboard() {
           );
         })}
       </div>
+
+      {/* Mood Streak Card */}
+      {!streakLoading && currentStreak > 0 && (
+        <FloatingElement delay={0.8}>
+          <motion.div
+            className="bg-gradient-to-r from-orange-50/50 to-yellow-50/50 dark:from-orange-900/20 dark:to-yellow-900/20 backdrop-blur-xl rounded-2xl p-6 border border-orange-200/50 dark:border-orange-800/50"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            whileHover={{ scale: 1.02 }}
+          >
+            <div className="flex items-center space-x-4">
+              <motion.div
+                className="text-4xl"
+                animate={{ scale: [1, 1.1, 1] }}
+                transition={{ duration: 2, repeat: Infinity }}
+              >
+                {streakEmoji}
+              </motion.div>
+              <div>
+                <h3 className="text-lg font-bold text-orange-800 dark:text-orange-300">
+                  🔥 {currentStreak} Day Mood Streak!
+                </h3>
+                <p className="text-orange-700 dark:text-orange-400">
+                  You're building a great habit of tracking your mood. Keep it up!
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        </FloatingElement>
+      )}
 
       {/* Quick Actions */}
       <FloatingElement delay={0.9}>
