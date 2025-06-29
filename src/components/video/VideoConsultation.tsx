@@ -14,7 +14,11 @@ import {
   WifiOff,
   Shield,
   RefreshCw,
-  X
+  X,
+  AlertCircle,
+  CheckCircle,
+  Monitor,
+  Camera
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useSettings } from '../../hooks/useSettings';
@@ -36,6 +40,7 @@ export function VideoConsultation() {
     forceEndLingeringSession,
     isLoading,
     error: tavusError,
+    isForceEndingSession,
     formatDuration
   } = useTavusVideo();
 
@@ -44,9 +49,11 @@ export function VideoConsultation() {
   const [showSettings, setShowSettings] = useState(false);
   const [selectedPersonality, setSelectedPersonality] = useState(settings.ai_personality);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const aiVideoRef = useRef<HTMLVideoElement>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [mediaPermissionError, setMediaPermissionError] = useState<string | null>(null);
   const [showPermissionModal, setShowPermissionModal] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('disconnected');
 
   const maxSessionTime = 3600; // 60 minutes for all users
   const timeRemaining = Math.max(0, maxSessionTime - sessionDuration);
@@ -65,7 +72,6 @@ export function VideoConsultation() {
 
   // Initialize local video stream
   const initializeLocalVideo = async () => {
-    // Don't initialize if session is active or stream already exists
     if (isSessionActive || localStream) {
       return;
     }
@@ -83,7 +89,6 @@ export function VideoConsultation() {
     } catch (error: any) {
       console.error('Error accessing media devices:', error);
       
-      // Handle different types of permission errors
       if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
         setMediaPermissionError('Camera and microphone access denied. Please allow permissions to use video consultation.');
         setShowPermissionModal(true);
@@ -112,16 +117,14 @@ export function VideoConsultation() {
   };
 
   useEffect(() => {
-    // Only initialize when not in session and no existing stream
     if (!isSessionActive && !localStream) {
       initializeLocalVideo();
     }
 
-    // Cleanup on unmount
     return () => {
       cleanupLocalStream();
     };
-  }, [isSessionActive]); // Remove localStream from dependencies to avoid infinite loop
+  }, [isSessionActive]);
 
   const handleStartSession = async () => {
     if (!isOnline) {
@@ -140,28 +143,42 @@ export function VideoConsultation() {
     }
 
     try {
-      // Clean up local stream before starting session
+      setConnectionStatus('connecting');
       cleanupLocalStream();
       
       const replicaId = getReplicaId(selectedPersonality);
-      await startSession(replicaId, maxSessionTime);
-      toast.success('Video consultation started!');
+      const success = await startSession(replicaId, maxSessionTime);
+      
+      if (success) {
+        setConnectionStatus('connected');
+        toast.success('Video consultation started!');
+        
+        // Simulate AI video connection (in a real implementation, this would connect to Tavus)
+        if (aiVideoRef.current) {
+          // For demo purposes, we'll show a placeholder or use a different approach
+          // In production, you would integrate with Tavus WebRTC or use their SDK
+          console.log('AI video session started with session data:', sessionData);
+        }
+      } else {
+        setConnectionStatus('error');
+        initializeLocalVideo();
+      }
     } catch (error) {
       console.error('Failed to start session:', error);
+      setConnectionStatus('error');
       toast.error('Failed to start video session');
-      // Re-initialize local video if session failed to start
       initializeLocalVideo();
     }
   };
 
   const handleEndSession = async () => {
     try {
+      setConnectionStatus('disconnected');
       await endSession();
       toast.success('Video consultation ended');
-      // Re-initialize local video after session ends
       setTimeout(() => {
         initializeLocalVideo();
-      }, 1000); // Small delay to ensure session cleanup
+      }, 1000);
     } catch (error) {
       console.error('Failed to end session:', error);
       toast.error('Failed to end session properly');
@@ -202,10 +219,8 @@ export function VideoConsultation() {
     setMediaPermissionError(null);
     setShowPermissionModal(false);
     
-    // Clean up existing stream first
     cleanupLocalStream();
     
-    // Wait a bit before retrying
     setTimeout(async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -307,23 +322,62 @@ export function VideoConsultation() {
             animate={{ opacity: 1, scale: 1 }}
             className="bg-black rounded-2xl overflow-hidden aspect-video relative"
           >
-            {/* AI Video Stream */}
-            {isSessionActive && sessionData?.session_url ? (
-              <iframe
-                src={sessionData.session_url}
-                className="w-full h-full"
-                allow="camera; microphone"
-                title="AI Video Consultation"
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-900 to-blue-900">
-                <div className="text-center text-white">
-                  <Video className="h-16 w-16 mx-auto mb-4 opacity-50" />
-                  <p className="text-lg font-medium">AI Companion Ready</p>
-                  <p className="text-sm opacity-75">Start a session to begin video consultation</p>
+            {/* AI Video Area */}
+            <div className="w-full h-full relative">
+              {isSessionActive ? (
+                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-900 to-blue-900">
+                  {connectionStatus === 'connecting' && (
+                    <div className="text-center text-white">
+                      <motion.div
+                        className="w-16 h-16 border-4 border-white/30 border-t-white rounded-full mx-auto mb-4"
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                      />
+                      <p className="text-lg font-medium">Connecting to AI Companion...</p>
+                      <p className="text-sm opacity-75">Please wait while we establish the connection</p>
+                    </div>
+                  )}
+                  
+                  {connectionStatus === 'connected' && (
+                    <div className="text-center text-white">
+                      <motion.div
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        className="w-32 h-32 bg-gradient-to-br from-purple-500 to-blue-500 rounded-full flex items-center justify-center mx-auto mb-4"
+                      >
+                        <User className="h-16 w-16 text-white" />
+                      </motion.div>
+                      <p className="text-lg font-medium">AI Companion Active</p>
+                      <p className="text-sm opacity-75">Your AI therapist is ready to help</p>
+                      <div className="mt-4 flex items-center justify-center space-x-2">
+                        <motion.div
+                          className="w-2 h-2 bg-green-400 rounded-full"
+                          animate={{ scale: [1, 1.2, 1] }}
+                          transition={{ duration: 1, repeat: Infinity }}
+                        />
+                        <span className="text-sm text-green-400">Connected</span>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {connectionStatus === 'error' && (
+                    <div className="text-center text-white">
+                      <AlertCircle className="h-16 w-16 text-red-400 mx-auto mb-4" />
+                      <p className="text-lg font-medium">Connection Failed</p>
+                      <p className="text-sm opacity-75">Unable to connect to AI companion</p>
+                    </div>
+                  )}
                 </div>
-              </div>
-            )}
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-900 to-blue-900">
+                  <div className="text-center text-white">
+                    <Video className="h-16 w-16 mx-auto mb-4 opacity-50" />
+                    <p className="text-lg font-medium">AI Companion Ready</p>
+                    <p className="text-sm opacity-75">Start a session to begin video consultation</p>
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Local Video Preview */}
             <div className="absolute bottom-4 right-4 w-32 h-24 bg-gray-900 rounded-lg overflow-hidden border-2 border-white/20">
@@ -360,11 +414,23 @@ export function VideoConsultation() {
             {/* Connection Status Indicator */}
             <div className="absolute top-4 right-4 flex items-center space-x-2">
               {isOnline ? (
-                <div className="bg-green-500 w-3 h-3 rounded-full animate-pulse"></div>
+                <motion.div
+                  className="bg-green-500 w-3 h-3 rounded-full"
+                  animate={{ scale: [1, 1.2, 1] }}
+                  transition={{ duration: 2, repeat: Infinity }}
+                />
               ) : (
                 <div className="bg-red-500 w-3 h-3 rounded-full"></div>
               )}
             </div>
+
+            {/* Session Status */}
+            {isSessionActive && (
+              <div className="absolute bottom-4 left-4 bg-black/50 backdrop-blur-sm text-white px-3 py-2 rounded-lg flex items-center space-x-2">
+                <CheckCircle className="h-4 w-4 text-green-400" />
+                <span className="text-sm">Session Active</span>
+              </div>
+            )}
           </motion.div>
 
           {/* Controls */}
@@ -494,6 +560,17 @@ export function VideoConsultation() {
                   </span>
                 </div>
               )}
+
+              <div className="flex justify-between items-center">
+                <span className="text-gray-600 dark:text-gray-400">Status:</span>
+                <span className={`font-medium ${
+                  isSessionActive 
+                    ? 'text-green-600 dark:text-green-400' 
+                    : 'text-gray-500 dark:text-gray-400'
+                }`}>
+                  {isSessionActive ? 'Active' : 'Inactive'}
+                </span>
+              </div>
             </div>
           </motion.div>
 
@@ -533,11 +610,11 @@ export function VideoConsultation() {
               {isActiveSessionError && (
                 <button
                   onClick={handleClearLingeringSession}
-                  disabled={isLoading}
+                  disabled={isLoading || isForceEndingSession}
                   className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200 flex items-center space-x-2 disabled:opacity-50"
                 >
                   <X className="h-4 w-4" />
-                  <span>{isLoading ? 'Clearing...' : 'Clear Session'}</span>
+                  <span>{isLoading || isForceEndingSession ? 'Clearing...' : 'Clear Session'}</span>
                 </button>
               )}
             </div>
