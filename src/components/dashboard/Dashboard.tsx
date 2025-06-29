@@ -251,16 +251,7 @@ export function Dashboard() {
       textColor: 'text-purple-700 dark:text-purple-400',
       glowColor: 'shadow-purple-500/25',
     },
-    {
-      title: 'Mood Streak',
-      value: streakLoading ? '...' : `${currentStreak} days`,
-      subtitle: `Keep it up! ${streakEmoji}`,
-      icon: Flame,
-      color: 'from-orange-400 via-amber-500 to-yellow-500',
-      bgColor: 'bg-gradient-to-br from-orange-50/50 to-amber-50/50 dark:from-orange-900/20 dark:to-amber-900/20',
-      textColor: 'text-orange-700 dark:text-orange-400',
-      glowColor: 'shadow-orange-500/25',
-    },
+    
   ];
 
   if (loading && !dataLoaded) {
