@@ -17,7 +17,8 @@ import {
   Star,
   Rocket,
   Crown,
-  Flame
+  Flame,
+  RefreshCw
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
@@ -55,6 +56,7 @@ export function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dataLoaded, setDataLoaded] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
 
   const parallaxY = useTransform(scrollY, [0, 500], [0, -150]);
   const parallaxOpacity = useTransform(scrollY, [0, 300], [1, 0.3]);
@@ -73,21 +75,31 @@ export function Dashboard() {
     }
   }, [searchParams]);
 
-  const loadStats = useCallback(async () => {
-    if (!user || dataLoaded) return;
+  const loadStats = useCallback(async (isRetry = false) => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
 
     // Don't block the UI if we're not connected
     if (!isSupabaseConnected) {
       setLoading(false);
-      setError(null); // Don't show error for connection issues
+      setError(null);
       return;
     }
 
+    // Prevent multiple simultaneous loads
+    if (loading && !isRetry) return;
+
     try {
+      if (!isRetry) {
+        setLoading(true);
+      }
       setError(null);
+      
       console.log('Loading dashboard stats...');
       
-      // Load all data in parallel with proper error handling
+      // Load all data in parallel with proper error handling and timeouts
       const [taskData, moodData, voiceData] = await Promise.allSettled([
         withRetry(async () => {
           const { data, error } = await supabase
@@ -102,7 +114,7 @@ export function Dashboard() {
             return null;
           }
           return data;
-        }),
+        }, 2, 1000),
         
         withRetry(async () => {
           const today = new Date().toISOString().split('T')[0];
@@ -120,7 +132,7 @@ export function Dashboard() {
             return null;
           }
           return data;
-        }),
+        }, 2, 1000),
         
         withRetry(async () => {
           const { data, error } = await supabase
@@ -135,42 +147,49 @@ export function Dashboard() {
             return null;
           }
           return data;
-        })
+        }, 2, 1000)
       ]);
 
-      // Process results
-      const tasks = taskData.status === 'fulfilled' ? taskData.value : null;
-      const mood = moodData.status === 'fulfilled' ? moodData.value : null;
-      const voice = voiceData.status === 'fulfilled' ? voiceData.value : null;
+      // Process results with better error handling
+      const tasks = taskData.status === 'fulfilled' && taskData.value ? taskData.value : [];
+      const mood = moodData.status === 'fulfilled' && moodData.value ? moodData.value : [];
+      const voice = voiceData.status === 'fulfilled' && voiceData.value ? voiceData.value : [];
 
       setStats({
-        totalTasks: tasks?.length || 0,
-        completedTasks: tasks?.filter(task => task.completed).length || 0,
-        todayMood: mood?.[0]?.mood || null,
-        voiceSessions: voice?.length || 0,
+        totalTasks: tasks.length,
+        completedTasks: tasks.filter(task => task.completed).length,
+        todayMood: mood[0]?.mood || null,
+        voiceSessions: voice.length,
       });
 
       setDataLoaded(true);
+      setRetryCount(0);
       console.log('Dashboard stats loaded successfully');
     } catch (error) {
       console.error('Error loading stats:', error);
-      // Only show error if it's not a connection issue
-      if (isSupabaseConnected) {
-        setError('Some data may not be up to date');
+      
+      // Only show error if it's not a connection issue and we have retries left
+      if (isSupabaseConnected && retryCount < 2) {
+        setRetryCount(prev => prev + 1);
+        // Retry after a delay
+        setTimeout(() => loadStats(true), 2000);
+      } else if (isSupabaseConnected) {
+        setError('Unable to load some data. Please try refreshing the page.');
       }
     } finally {
       setLoading(false);
     }
-  }, [user, handleSupabaseError, isSupabaseConnected, dataLoaded, withRetry]);
+  }, [user, handleSupabaseError, isSupabaseConnected, withRetry, loading, retryCount]);
 
   useEffect(() => {
-    if (user && !dataLoaded) {
+    if (user && !dataLoaded && isSupabaseConnected) {
       loadStats();
     } else if (!user) {
       setLoading(false);
       setDataLoaded(false);
+      setRetryCount(0);
     }
-  }, [user, loadStats, dataLoaded]);
+  }, [user, loadStats, dataLoaded, isSupabaseConnected]);
 
   const handleQuickAction = async (action: string) => {
     try {
@@ -184,9 +203,9 @@ export function Dashboard() {
         case 'task':
           navigate('/tasks');
           break;
-        case 'retry-connection':
-          setLoading(true);
+        case 'retry-data':
           setDataLoaded(false);
+          setRetryCount(0);
           await loadStats();
           break;
         default:
@@ -244,7 +263,7 @@ export function Dashboard() {
     },
   ];
 
-  if (loading) {
+  if (loading && !dataLoaded) {
     return (
       <div className="space-y-8">
         <motion.div
@@ -340,7 +359,7 @@ export function Dashboard() {
         </motion.div>
       </FloatingElement>
 
-      {/* Connection Error Banner - Only show for actual errors */}
+      {/* Data Loading Error Banner */}
       {error && (
         <FloatingElement delay={0.3}>
           <motion.div
@@ -360,18 +379,46 @@ export function Dashboard() {
                 <div>
                   <p className="font-semibold text-yellow-200">Data Loading Issues</p>
                   <p className="text-sm text-yellow-300/80">
-                    {error}. The app will continue to work normally.
+                    {error} The app will continue to work normally.
                   </p>
                 </div>
               </div>
               <motion.button
-                onClick={() => handleQuickAction('retry-connection')}
-                className="bg-yellow-500 hover:bg-yellow-400 text-black px-6 py-3 rounded-xl font-semibold transition-colors duration-200"
+                onClick={() => handleQuickAction('retry-data')}
+                className="bg-yellow-500 hover:bg-yellow-400 text-black px-6 py-3 rounded-xl font-semibold transition-colors duration-200 flex items-center space-x-2"
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
+                disabled={loading}
               >
-                Retry
+                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                <span>{loading ? 'Retrying...' : 'Retry'}</span>
               </motion.button>
+            </div>
+          </motion.div>
+        </FloatingElement>
+      )}
+
+      {/* Connection Status Info */}
+      {!isSupabaseConnected && (
+        <FloatingElement delay={0.2}>
+          <motion.div
+            className="bg-gradient-to-r from-blue-500/20 to-indigo-500/20 backdrop-blur-xl border border-blue-500/30 rounded-2xl p-6"
+            initial={{ opacity: 0, x: 50 }}
+            animate={{ opacity: 1, x: 0 }}
+          >
+            <div className="flex items-center space-x-4">
+              <motion.div
+                animate={{ scale: [1, 1.2, 1] }}
+                transition={{ duration: 2, repeat: Infinity }}
+              >
+                <WifiOff className="h-6 w-6 text-blue-400" />
+              </motion.div>
+              <div>
+                <p className="font-semibold text-blue-200">Working Offline</p>
+                <p className="text-sm text-blue-300/80">
+                  Some features may be limited. Data will sync when connection is restored.
+                </p>
+              </div>
             </div>
           </motion.div>
         </FloatingElement>

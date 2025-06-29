@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Brain, Mail, Lock, Eye, EyeOff, ArrowRight, Sparkles, Zap, Star } from 'lucide-react';
+import { Brain, Mail, Lock, Eye, EyeOff, ArrowRight, Sparkles, Zap, Star, AlertCircle, CheckCircle } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
+import { useNetworkStatus } from '../../hooks/useNetworkStatus';
+import { isSupabaseConfigured } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 
 const FloatingParticle = ({ delay }: { delay: number }) => (
@@ -29,7 +31,12 @@ export function AuthForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const { signIn, signUp } = useAuth();
+  const { isOnline, isSupabaseConnected } = useNetworkStatus();
+
+  const isConfigured = isSupabaseConfigured();
+  const canAuthenticate = isConfigured && isOnline && isSupabaseConnected;
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -40,23 +47,74 @@ export function AuthForm() {
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, []);
 
+  const validateForm = () => {
+    const errors: string[] = [];
+    
+    if (!email.trim()) {
+      errors.push('Email is required');
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      errors.push('Please enter a valid email address');
+    }
+    
+    if (!password) {
+      errors.push('Password is required');
+    } else if (isSignUp && password.length < 6) {
+      errors.push('Password must be at least 6 characters long');
+    }
+    
+    setValidationErrors(errors);
+    return errors.length === 0;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!validateForm()) {
+      return;
+    }
+
+    if (!canAuthenticate) {
+      if (!isConfigured) {
+        toast.error('Application not configured. Please check environment variables.');
+      } else if (!isOnline) {
+        toast.error('Internet connection required for authentication');
+      } else if (!isSupabaseConnected) {
+        toast.error('Unable to connect to authentication server');
+      }
+      return;
+    }
+
     setLoading(true);
+    setValidationErrors([]);
 
     try {
       if (isSignUp) {
-        const { error } = await signUp(email, password);
+        const { error } = await signUp(email.trim(), password);
         if (error) throw error;
-        toast.success('Account created successfully! 🎉');
+        toast.success('Account created successfully! Please check your email for verification. 🎉');
       } else {
-        const { error } = await signIn(email, password);
+        const { error } = await signIn(email.trim(), password);
         if (error) throw error;
         toast.success('Welcome back! ✨');
       }
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'An error occurred';
+      console.error('Authentication error:', error);
+      
+      let errorMessage = 'An unexpected error occurred';
+      
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'object' && error !== null && 'message' in error) {
+        errorMessage = String((error as any).message);
+      }
+      
+      // Don't show technical error messages to users
+      if (errorMessage.includes('fetch') || errorMessage.includes('network')) {
+        errorMessage = 'Network error. Please check your connection and try again.';
+      }
+      
       toast.error(errorMessage);
+      setValidationErrors([errorMessage]);
     } finally {
       setLoading(false);
     }
@@ -91,6 +149,38 @@ export function AuthForm() {
           }}
         />
       </div>
+
+      {/* Connection Status Banner */}
+      {!canAuthenticate && (
+        <motion.div
+          initial={{ opacity: 0, y: -50 }}
+          animate={{ opacity: 1, y: 0 }}
+          className={`relative z-50 text-white px-4 py-3 text-center text-sm font-medium shadow-lg ${
+            !isConfigured
+              ? 'bg-gradient-to-r from-red-600 to-red-700'
+              : !isOnline
+              ? 'bg-gradient-to-r from-orange-600 to-red-600'
+              : 'bg-gradient-to-r from-yellow-600 to-orange-600'
+          }`}
+        >
+          <div className="flex items-center justify-center space-x-3">
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+            >
+              <AlertCircle className="h-4 w-4" />
+            </motion.div>
+            <span>
+              {!isConfigured
+                ? 'Application not configured - Please check environment variables'
+                : !isOnline
+                ? 'No internet connection - Authentication unavailable'
+                : 'Server connection issues - Please try again later'
+              }
+            </span>
+          </div>
+        </motion.div>
+      )}
 
       {/* Main Content */}
       <div className="relative z-10 flex items-center justify-center min-h-screen p-4">
@@ -148,6 +238,29 @@ export function AuthForm() {
               </motion.p>
             </motion.div>
 
+            {/* Validation Errors */}
+            <AnimatePresence>
+              {validationErrors.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="mb-6 p-4 bg-red-500/20 border border-red-500/30 rounded-xl"
+                >
+                  <div className="flex items-start space-x-3">
+                    <AlertCircle className="h-5 w-5 text-red-400 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      {validationErrors.map((error, index) => (
+                        <p key={index} className="text-red-300 text-sm">
+                          {error}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             {/* Form */}
             <motion.form
               onSubmit={handleSubmit}
@@ -174,6 +287,7 @@ export function AuthForm() {
                     className="relative w-full bg-white/5 border border-white/20 rounded-xl pl-10 pr-4 py-3 text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-transparent transition-all duration-300 backdrop-blur-sm"
                     placeholder="Enter your email"
                     required
+                    disabled={loading || !canAuthenticate}
                   />
                 </div>
               </motion.div>
@@ -196,7 +310,8 @@ export function AuthForm() {
                     className="relative w-full bg-white/5 border border-white/20 rounded-xl pl-10 pr-12 py-3 text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-transparent transition-all duration-300 backdrop-blur-sm"
                     placeholder="Enter your password"
                     required
-                    minLength={6}
+                    minLength={isSignUp ? 6 : 1}
+                    disabled={loading || !canAuthenticate}
                   />
                   <motion.button
                     type="button"
@@ -204,22 +319,28 @@ export function AuthForm() {
                     className="absolute right-3 top-1/2 transform -translate-y-1/2 text-white/60 hover:text-white transition-colors duration-200 z-10"
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
+                    disabled={loading}
                   >
                     {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                   </motion.button>
                 </div>
+                {isSignUp && (
+                  <p className="text-xs text-white/50 mt-1">
+                    Password must be at least 6 characters long
+                  </p>
+                )}
               </motion.div>
 
               {/* Submit Button */}
               <motion.button
                 type="submit"
-                disabled={loading}
-                className="relative w-full group overflow-hidden"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
+                disabled={loading || !canAuthenticate}
+                className="relative w-full group overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed"
+                whileHover={{ scale: canAuthenticate ? 1.02 : 1 }}
+                whileTap={{ scale: canAuthenticate ? 0.98 : 1 }}
               >
                 <div className="absolute inset-0 bg-gradient-to-r from-purple-600 via-blue-600 to-purple-600 rounded-xl"></div>
-                <div className="absolute inset-0 bg-gradient-to-r from-purple-600 via-blue-600 to-purple-600 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 animate-pulse"></div>
+                <div className={`absolute inset-0 bg-gradient-to-r from-purple-600 via-blue-600 to-purple-600 rounded-xl opacity-0 ${canAuthenticate ? 'group-hover:opacity-100' : ''} transition-opacity duration-300 animate-pulse`}></div>
                 <div className="relative bg-gradient-to-r from-purple-600 via-blue-600 to-purple-600 text-white font-semibold py-3 px-4 rounded-xl transition-all duration-300 flex items-center justify-center space-x-2">
                   <AnimatePresence mode="wait">
                     {loading ? (
@@ -236,6 +357,17 @@ export function AuthForm() {
                           transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
                         />
                         <span>Processing...</span>
+                      </motion.div>
+                    ) : !canAuthenticate ? (
+                      <motion.div
+                        key="disabled"
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.8 }}
+                        className="flex items-center space-x-2"
+                      >
+                        <AlertCircle className="h-4 w-4" />
+                        <span>Unavailable</span>
                       </motion.div>
                     ) : (
                       <motion.div
@@ -267,8 +399,12 @@ export function AuthForm() {
               transition={{ delay: 1.2 }}
             >
               <motion.button
-                onClick={() => setIsSignUp(!isSignUp)}
-                className="text-white/60 hover:text-white transition-colors duration-200 relative group"
+                onClick={() => {
+                  setIsSignUp(!isSignUp);
+                  setValidationErrors([]);
+                }}
+                disabled={loading}
+                className="text-white/60 hover:text-white transition-colors duration-200 relative group disabled:opacity-50"
                 whileHover={{ scale: 1.05 }}
               >
                 <span className="relative z-10">
@@ -281,6 +417,19 @@ export function AuthForm() {
                   layoutId="toggleHover"
                 />
               </motion.button>
+            </motion.div>
+
+            {/* Connection Status */}
+            <motion.div
+              className="mt-6 flex items-center justify-center space-x-2"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 1.4 }}
+            >
+              <div className={`w-2 h-2 rounded-full ${canAuthenticate ? 'bg-green-400' : 'bg-red-400'}`} />
+              <span className="text-xs text-white/60">
+                {canAuthenticate ? 'Ready to authenticate' : 'Authentication unavailable'}
+              </span>
             </motion.div>
 
             {/* Decorative Elements */}

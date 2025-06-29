@@ -16,7 +16,8 @@ import {
   Sparkles,
   Zap,
   Star,
-  AlertTriangle
+  AlertTriangle,
+  CheckCircle
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
@@ -49,6 +50,7 @@ export function Layout() {
   const { isOnline, isSupabaseConnected, checkConnection, isChecking } = useNetworkStatus();
   const location = useLocation();
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const [showConnectionDetails, setShowConnectionDetails] = useState(false);
   const { scrollY } = useScroll();
   
   const headerY = useTransform(scrollY, [0, 100], [0, -50]);
@@ -66,29 +68,37 @@ export function Layout() {
   }, []);
 
   const handleSignOut = async () => {
-    const { error } = await signOut();
-    if (error) {
-      toast.error('Error signing out');
-    } else {
-      toast.success('Signed out successfully ✨');
+    try {
+      const { error } = await signOut();
+      if (error) {
+        console.warn('Sign out error:', error);
+        toast.error('Error signing out, but you have been logged out locally');
+      } else {
+        toast.success('Signed out successfully ✨');
+      }
+    } catch (error) {
+      console.error('Sign out error:', error);
+      toast.success('Signed out successfully ✨'); // Still show success since local state is cleared
     }
   };
 
   const handleRetryConnection = async () => {
     if (isChecking) return;
     
-    toast.loading('Checking connection...', { id: 'retry-connection' });
+    const toastId = 'retry-connection';
+    toast.loading('Checking connection...', { id: toastId });
     
     try {
       const isConnected = await checkConnection();
       
       if (isConnected) {
-        toast.success('Connection restored! 🎉', { id: 'retry-connection' });
+        toast.success('Connection restored! 🎉', { id: toastId });
       } else {
-        toast.error('Still having connection issues', { id: 'retry-connection' });
+        toast.error('Still having connection issues. Please check your internet connection.', { id: toastId });
       }
     } catch (error) {
-      toast.error('Connection check failed', { id: 'retry-connection' });
+      console.error('Connection check failed:', error);
+      toast.error('Connection check failed', { id: toastId });
     }
   };
 
@@ -101,14 +111,57 @@ export function Layout() {
     { icon: Settings, label: 'Settings', path: '/settings', color: 'from-gray-500 to-slate-500' },
   ];
 
-  // Only show banner for actual issues
-  const showNetworkBanner = !isConfigured || (!isOnline && navigator.onLine === false);
+  // Determine what issues we have
+  const hasConfigIssue = !isConfigured;
+  const hasNetworkIssue = !isOnline && navigator.onLine === false;
+  const hasSupabaseIssue = isOnline && !isSupabaseConnected;
+  
+  const showBanner = hasConfigIssue || hasNetworkIssue || hasSupabaseIssue;
+
+  const getBannerConfig = () => {
+    if (hasConfigIssue) {
+      return {
+        type: 'error',
+        icon: AlertTriangle,
+        title: 'Configuration Required',
+        message: 'Supabase environment variables are not configured. Please check your .env file.',
+        bgColor: 'bg-gradient-to-r from-red-600 to-red-700',
+        showRetry: false
+      };
+    }
+    
+    if (hasNetworkIssue) {
+      return {
+        type: 'warning',
+        icon: WifiOff,
+        title: 'No Internet Connection',
+        message: 'Please check your internet connection. Some features may not work properly.',
+        bgColor: 'bg-gradient-to-r from-orange-600 to-red-600',
+        showRetry: true
+      };
+    }
+    
+    if (hasSupabaseIssue) {
+      return {
+        type: 'warning',
+        icon: WifiOff,
+        title: 'Server Connection Issues',
+        message: 'Having trouble connecting to our servers. Retrying automatically...',
+        bgColor: 'bg-gradient-to-r from-yellow-600 to-orange-600',
+        showRetry: true
+      };
+    }
+    
+    return null;
+  };
+
+  const bannerConfig = getBannerConfig();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 relative overflow-hidden">
       {/* Animated Background */}
       <div className="fixed inset-0 z-0">
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg width=%2260%22 height=%2260%22 viewBox=%220 0 60 60%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cg fill=%22none%22 fill-rule=%22evenodd%22%3E%3Cg fill=%22%239C92AC%22 fill-opacity=%220.05%22%3E%3Ccircle cx=%2230%22 cy=%2230%22 r=%221%22/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')] animate-pulse"></div>
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg%20width=%2260%22%20height=%2260%22%20viewBox=%220%200%2060%2060%22%20xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cg%20fill=%22none%22%20fill-rule=%22evenodd%22%3E%3Cg%20fill=%22%239C92AC%22%20fill-opacity=%220.05%22%3E%3Ccircle%20cx=%2230%22%20cy=%2230%22%20r=%221%22/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')] animate-pulse"></div>
         
         {/* Floating Icons */}
         {Array.from({ length: 8 }).map((_, i) => (
@@ -138,49 +191,79 @@ export function Layout() {
         />
       </div>
 
-      {/* Network Status Banner - Only for real issues */}
+      {/* Connection Status Banner */}
       <AnimatePresence>
-        {showNetworkBanner && (
+        {showBanner && bannerConfig && (
           <motion.div
             initial={{ opacity: 0, y: -50 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -50 }}
-            className={`relative z-50 ${
-              !isConfigured
-                ? 'bg-gradient-to-r from-orange-600 to-red-600'
-                : 'bg-gradient-to-r from-red-600 to-red-700'
-            } text-white px-4 py-3 text-center text-sm font-medium shadow-lg`}
+            className={`relative z-50 ${bannerConfig.bgColor} text-white px-4 py-3 shadow-lg`}
           >
-            <div className="flex items-center justify-center space-x-3">
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-              >
-                {!isConfigured ? (
-                  <AlertTriangle className="h-4 w-4" />
-                ) : (
-                  <WifiOff className="h-4 w-4" />
-                )}
-              </motion.div>
-              <span>
-                {!isConfigured
-                  ? 'Supabase not configured - Please check your environment variables'
-                  : 'No internet connection - Some features may not work'
-                }
-              </span>
-              {isConfigured && (
-                <motion.button
-                  onClick={handleRetryConnection}
-                  disabled={isChecking}
-                  className="bg-white/20 hover:bg-white/30 px-3 py-1 rounded-full text-xs transition-colors duration-200 flex items-center space-x-1 disabled:opacity-50"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
+            <div className="flex items-center justify-between max-w-7xl mx-auto">
+              <div className="flex items-center space-x-3">
+                <motion.div
+                  animate={{ rotate: bannerConfig.type === 'error' ? 0 : 360 }}
+                  transition={{ duration: 2, repeat: bannerConfig.type === 'error' ? 0 : Infinity, ease: "linear" }}
                 >
-                  <RefreshCw className={`h-3 w-3 ${isChecking ? 'animate-spin' : ''}`} />
-                  <span>{isChecking ? 'Checking...' : 'Retry'}</span>
-                </motion.button>
-              )}
+                  <bannerConfig.icon className="h-5 w-5" />
+                </motion.div>
+                <div>
+                  <p className="font-semibold text-sm">{bannerConfig.title}</p>
+                  <p className="text-xs opacity-90">{bannerConfig.message}</p>
+                </div>
+              </div>
+              
+              <div className="flex items-center space-x-3">
+                {/* Connection Details */}
+                <button
+                  onClick={() => setShowConnectionDetails(!showConnectionDetails)}
+                  className="text-xs bg-white/20 hover:bg-white/30 px-2 py-1 rounded transition-colors duration-200"
+                >
+                  Details
+                </button>
+                
+                {bannerConfig.showRetry && (
+                  <motion.button
+                    onClick={handleRetryConnection}
+                    disabled={isChecking}
+                    className="bg-white/20 hover:bg-white/30 px-3 py-1 rounded text-xs transition-colors duration-200 flex items-center space-x-1 disabled:opacity-50"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    <RefreshCw className={`h-3 w-3 ${isChecking ? 'animate-spin' : ''}`} />
+                    <span>{isChecking ? 'Checking...' : 'Retry'}</span>
+                  </motion.button>
+                )}
+              </div>
             </div>
+            
+            {/* Connection Details Panel */}
+            <AnimatePresence>
+              {showConnectionDetails && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="mt-3 pt-3 border-t border-white/20"
+                >
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                    <div className="flex items-center space-x-2">
+                      <div className={`w-2 h-2 rounded-full ${isConfigured ? 'bg-green-400' : 'bg-red-400'}`} />
+                      <span>Configuration: {isConfigured ? 'OK' : 'Missing'}</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-400' : 'bg-red-400'}`} />
+                      <span>Internet: {isOnline ? 'Connected' : 'Offline'}</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className={`w-2 h-2 rounded-full ${isSupabaseConnected ? 'bg-green-400' : 'bg-red-400'}`} />
+                      <span>Database: {isSupabaseConnected ? 'Connected' : 'Disconnected'}</span>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </motion.div>
         )}
       </AnimatePresence>
