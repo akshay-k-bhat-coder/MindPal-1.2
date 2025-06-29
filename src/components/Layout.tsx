@@ -19,7 +19,6 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
-import { NotificationBell } from './notifications/NotificationBell';
 import toast from 'react-hot-toast';
 
 const FloatingIcon = ({ icon: Icon, delay }: { icon: any; delay: number }) => (
@@ -45,7 +44,7 @@ const FloatingIcon = ({ icon: Icon, delay }: { icon: any; delay: number }) => (
 
 export function Layout() {
   const { user, signOut } = useAuth();
-  const { isOnline, isConnectedToSupabase, retryConnection } = useNetworkStatus();
+  const { isOnline, isSupabaseConnected, checkConnection } = useNetworkStatus();
   const location = useLocation();
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const { scrollY } = useScroll();
@@ -73,9 +72,9 @@ export function Layout() {
 
   const handleRetryConnection = async () => {
     toast.loading('Checking connection...', { id: 'retry-connection' });
-    const status = await retryConnection();
+    const isConnected = await checkConnection();
     
-    if (status.isOnline && status.isConnectedToSupabase) {
+    if (isConnected) {
       toast.success('Connection restored! 🎉', { id: 'retry-connection' });
     } else {
       toast.error('Still having connection issues', { id: 'retry-connection' });
@@ -91,7 +90,7 @@ export function Layout() {
     { icon: Settings, label: 'Settings', path: '/settings', color: 'from-gray-500 to-slate-500' },
   ];
 
-  const showNetworkBanner = !isOnline || !isConnectedToSupabase;
+  const showNetworkBanner = !isOnline || !isSupabaseConnected;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 relative overflow-hidden">
@@ -251,9 +250,6 @@ export function Layout() {
 
             {/* User Menu */}
             <div className="flex items-center space-x-4">
-              {/* Notification Bell */}
-              <NotificationBell />
-              
               <motion.div
                 className="text-sm text-white/80 hidden sm:block"
                 initial={{ opacity: 0 }}

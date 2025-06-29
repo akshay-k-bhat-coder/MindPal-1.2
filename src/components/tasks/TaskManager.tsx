@@ -8,11 +8,9 @@ import {
   Calendar,
   Flag,
   Filter,
-  Search,
-  Bell
+  Search
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
-import { useNotifications } from '../../hooks/useNotifications';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 
@@ -24,14 +22,11 @@ interface Task {
   priority: 'low' | 'medium' | 'high';
   category: string;
   due_date: string | null;
-  reminder_enabled: boolean;
-  reminder_time: string | null;
   created_at: string;
 }
 
 export function TaskManager() {
   const { user } = useAuth();
-  const { scheduleTaskReminder, markTaskComplete, scheduleOverdueReminder, scheduleAchievementNotification } = useNotifications();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [newTask, setNewTask] = useState({
     title: '',
@@ -39,7 +34,6 @@ export function TaskManager() {
     priority: 'medium' as 'low' | 'medium' | 'high',
     category: 'personal',
     due_date: '',
-    reminder_enabled: false,
   });
   const [showAddForm, setShowAddForm] = useState(false);
   const [filter, setFilter] = useState('all');
@@ -84,10 +78,6 @@ export function TaskManager() {
         priority: newTask.priority,
         category: newTask.category,
         due_date: newTask.due_date || null,
-        reminder_enabled: newTask.reminder_enabled,
-        reminder_time: newTask.reminder_enabled && newTask.due_date 
-          ? new Date(new Date(newTask.due_date).getTime() - 30 * 60 * 1000).toISOString()
-          : null,
       };
 
       const { data, error } = await supabase
@@ -100,31 +90,15 @@ export function TaskManager() {
       
       setTasks([data, ...tasks]);
       
-      // Schedule reminder if enabled
-      if (newTask.reminder_enabled && newTask.due_date) {
-        await scheduleTaskReminder(data.id, newTask.title, new Date(newTask.due_date));
-      }
-      
       setNewTask({
         title: '',
         description: '',
         priority: 'medium',
         category: 'personal',
         due_date: '',
-        reminder_enabled: false,
       });
       setShowAddForm(false);
       toast.success('Task added successfully! 📝');
-
-      // Check for achievements
-      const completedTasks = tasks.filter(t => t.completed).length;
-      if (completedTasks === 0 && tasks.length === 0) {
-        // First task created
-        await scheduleAchievementNotification(
-          'First Task Created',
-          'Great start! You\'ve created your first task. Keep building healthy habits!'
-        );
-      }
     } catch (error) {
       console.error('Error adding task:', error);
       toast.error('Failed to add task');
@@ -145,28 +119,7 @@ export function TaskManager() {
       ));
       
       if (!completed) {
-        // Task was just completed
-        await markTaskComplete(taskId);
         toast.success('Task completed! 🎉');
-
-        // Check for completion achievements
-        const newCompletedCount = tasks.filter(t => t.completed).length + 1;
-        if (newCompletedCount === 1) {
-          await scheduleAchievementNotification(
-            'First Task Completed',
-            'Congratulations! You\'ve completed your first task. You\'re building momentum!'
-          );
-        } else if (newCompletedCount === 10) {
-          await scheduleAchievementNotification(
-            'Task Master',
-            'Amazing! You\'ve completed 10 tasks. You\'re developing great productivity habits!'
-          );
-        } else if (newCompletedCount % 25 === 0) {
-          await scheduleAchievementNotification(
-            'Productivity Champion',
-            `Incredible! You've completed ${newCompletedCount} tasks. Your dedication is inspiring!`
-          );
-        }
       } else {
         toast.success('Task marked incomplete');
       }
@@ -192,25 +145,6 @@ export function TaskManager() {
       toast.error('Failed to delete task');
     }
   };
-
-  // Check for overdue tasks and schedule reminders
-  useEffect(() => {
-    const checkOverdueTasks = () => {
-      const now = new Date();
-      tasks.forEach(task => {
-        if (!task.completed && task.due_date && new Date(task.due_date) < now) {
-          // Task is overdue, schedule reminder
-          scheduleOverdueReminder(task.id, task.title);
-        }
-      });
-    };
-
-    // Check every hour
-    const interval = setInterval(checkOverdueTasks, 60 * 60 * 1000);
-    checkOverdueTasks(); // Check immediately
-
-    return () => clearInterval(interval);
-  }, [tasks, scheduleOverdueReminder]);
 
   const filteredTasks = tasks.filter(task => {
     const matchesFilter = filter === 'all' || 
@@ -393,20 +327,6 @@ export function TaskManager() {
                 </div>
               </div>
 
-              <div className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  id="reminder"
-                  checked={newTask.reminder_enabled}
-                  onChange={(e) => setNewTask({ ...newTask, reminder_enabled: e.target.checked })}
-                  className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-                />
-                <label htmlFor="reminder" className="text-sm text-gray-700 dark:text-gray-300 flex items-center space-x-1">
-                  <Bell className="h-4 w-4" />
-                  <span>Enable reminder (30 minutes before due date)</span>
-                </label>
-              </div>
-
               <div className="flex space-x-3 pt-4">
                 <button
                   type="submit"
@@ -489,13 +409,6 @@ export function TaskManager() {
                               <Calendar className="h-3 w-3 mr-1" />
                               {new Date(task.due_date).toLocaleDateString()}
                               {status === 'overdue' && ' (Overdue)'}
-                            </span>
-                          )}
-
-                          {task.reminder_enabled && (
-                            <span className="inline-flex items-center text-xs text-purple-600 dark:text-purple-400">
-                              <Bell className="h-3 w-3 mr-1" />
-                              Reminder
                             </span>
                           )}
                         </div>

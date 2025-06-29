@@ -2,7 +2,6 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { 
   User, 
-  Bell, 
   Palette, 
   Shield, 
   Save,
@@ -12,7 +11,6 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useSettings } from '../../hooks/useSettings';
-import { NotificationSettings } from '../notifications/NotificationSettings';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 
@@ -108,22 +106,8 @@ export function Settings() {
     }
   };
 
-  const handleSave = async () => {
-    try {
-      if (activeTab === 'profile') {
-        await handleSaveProfile();
-      } else {
-        // Settings are automatically saved via useSettings hook
-        toast.success('Settings saved successfully!');
-      }
-    } catch (error) {
-      toast.error('Failed to save settings');
-    }
-  };
-
   const tabs = [
     { id: 'profile', label: 'Profile', icon: User },
-    { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'preferences', label: 'Preferences', icon: Palette },
     { id: 'privacy', label: 'Privacy', icon: Shield },
   ];
@@ -214,9 +198,6 @@ export function Settings() {
           </div>
         );
 
-      case 'notifications':
-        return <NotificationSettings />;
-
       case 'preferences':
         return (
           <div className="space-y-6">
@@ -289,6 +270,20 @@ export function Settings() {
                 <option value="motivational">Motivational</option>
               </select>
             </div>
+
+            {/* Save Button for Preferences */}
+            <div className="flex justify-end pt-4">
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => toast.success('Preferences saved!')}
+                disabled={loading}
+                className="bg-gradient-to-r from-purple-600 to-blue-600 text-white px-6 py-3 rounded-xl font-semibold hover:shadow-lg transition-all duration-200 flex items-center space-x-2 disabled:opacity-50"
+              >
+                <Save className="h-4 w-4" />
+                <span>{loading ? 'Saving...' : 'Save Preferences'}</span>
+              </motion.button>
+            </div>
           </div>
         );
 
@@ -358,6 +353,20 @@ export function Settings() {
               <p className="text-sm text-yellow-800 dark:text-yellow-300">
                 🔒 All sensitive data is encrypted before storage. Your privacy is our priority.
               </p>
+            </div>
+
+            {/* Save Button for Privacy */}
+            <div className="flex justify-end pt-4">
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => toast.success('Privacy settings saved!')}
+                disabled={loading}
+                className="bg-gradient-to-r from-purple-600 to-blue-600 text-white px-6 py-3 rounded-xl font-semibold hover:shadow-lg transition-all duration-200 flex items-center space-x-2 disabled:opacity-50"
+              >
+                <Save className="h-4 w-4" />
+                <span>{loading ? 'Saving...' : 'Save Privacy Settings'}</span>
+              </motion.button>
             </div>
           </div>
         );
