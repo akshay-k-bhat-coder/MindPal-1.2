@@ -19,18 +19,18 @@ body {
   color: #f1f5f9;
 }
 
-/* Enhanced dark mode text colors */
+/* Enhanced dark mode text colors - IMPROVED VISIBILITY */
 .dark h1,
 .dark h2,
 .dark h3,
 .dark h4,
 .dark h5,
 .dark h6 {
-  color: #f8fafc;
+  color: #f8fafc !important;
 }
 
 .dark p {
-  color: #e2e8f0;
+  color: #e2e8f0 !important;
 }
 
 .dark .text-gray-900 {
@@ -57,21 +57,61 @@ body {
   color: #64748b !important;
 }
 
+/* Force white text for important elements */
+.dark .text-white {
+  color: #ffffff !important;
+}
+
+/* Ensure labels and form text are visible */
+.dark label,
+.dark .font-medium {
+  color: #f1f5f9 !important;
+}
+
+/* Make sure all text in cards is visible */
+.dark .bg-white,
+.dark .bg-gray-50,
+.dark .bg-gray-100 {
+  color: #f8fafc !important;
+}
+
+.dark .bg-white *,
+.dark .bg-gray-50 *,
+.dark .bg-gray-100 * {
+  color: inherit !important;
+}
+
+/* Specific fixes for common text elements */
+.dark span,
+.dark div {
+  color: inherit;
+}
+
+/* Make sure placeholder text is visible */
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #9ca3af !important;
+}
+
 /* Dark mode background improvements */
 .dark .bg-white {
   background-color: #1e293b !important;
+  color: #f8fafc !important;
 }
 
 .dark .bg-gray-50 {
   background-color: #0f172a !important;
+  color: #f8fafc !important;
 }
 
 .dark .bg-gray-100 {
   background-color: #1e293b !important;
+  color: #f8fafc !important;
 }
 
 .dark .bg-gray-200 {
   background-color: #334155 !important;
+  color: #f8fafc !important;
 }
 
 /* Dark mode border improvements */
@@ -387,11 +427,12 @@ select:focus {
 .dark input[type="tel"],
 .dark input[type="password"],
 .dark input[type="datetime-local"],
+.dark input[type="range"],
 .dark textarea,
 .dark select {
-  background-color: #374151;
-  border-color: #4b5563;
-  color: #f9fafb;
+  background-color: #374151 !important;
+  border-color: #4b5563 !important;
+  color: #f9fafb !important;
 }
 
 .dark input[type="text"]:focus,
@@ -399,25 +440,82 @@ select:focus {
 .dark input[type="tel"]:focus,
 .dark input[type="password"]:focus,
 .dark input[type="datetime-local"]:focus,
+.dark input[type="range"]:focus,
 .dark textarea:focus,
 .dark select:focus {
-  background-color: #374151;
-  border-color: #8b5cf6;
-  color: #f9fafb;
+  background-color: #374151 !important;
+  border-color: #8b5cf6 !important;
+  color: #f9fafb !important;
 }
 
 .dark input::placeholder,
 .dark textarea::placeholder {
-  color: #9ca3af;
+  color: #9ca3af !important;
 }
 
 /* Dark mode improvements for disabled inputs */
 .dark input:disabled,
 .dark textarea:disabled,
 .dark select:disabled {
-  background-color: #1f2937;
-  color: #6b7280;
-  border-color: #374151;
+  background-color: #1f2937 !important;
+  color: #6b7280 !important;
+  border-color: #374151 !important;
+}
+
+/* Force text visibility in all containers */
+.dark .bg-white *:not(.text-purple-600):not(.text-blue-600):not(.text-green-600):not(.text-red-600):not(.text-yellow-600):not(.text-orange-600):not(.text-pink-600):not(.text-indigo-600) {
+  color: #f8fafc !important;
+}
+
+.dark .bg-gray-50 *:not(.text-purple-600):not(.text-blue-600):not(.text-green-600):not(.text-red-600):not(.text-yellow-600):not(.text-orange-600):not(.text-pink-600):not(.text-indigo-600) {
+  color: #f8fafc !important;
+}
+
+.dark .bg-gray-100 *:not(.text-purple-600):not(.text-blue-600):not(.text-green-600):not(.text-red-600):not(.text-yellow-600):not(.text-orange-600):not(.text-pink-600):not(.text-indigo-600) {
+  color: #f8fafc !important;
+}
+
+/* Ensure colored text remains colored */
+.dark .text-purple-600,
+.dark .text-purple-700,
+.dark .text-purple-400 {
+  color: #a855f7 !important;
+}
+
+.dark .text-blue-600,
+.dark .text-blue-700,
+.dark .text-blue-400 {
+  color: #3b82f6 !important;
+}
+
+.dark .text-green-600,
+.dark .text-green-700,
+.dark .text-green-400 {
+  color: #10b981 !important;
+}
+
+.dark .text-red-600,
+.dark .text-red-700,
+.dark .text-red-400 {
+  color: #ef4444 !important;
+}
+
+.dark .text-yellow-600,
+.dark .text-yellow-700,
+.dark .text-yellow-400 {
+  color: #f59e0b !important;
+}
+
+.dark .text-orange-600,
+.dark .text-orange-700,
+.dark .text-orange-400 {
+  color: #f97316 !important;
+}
+
+.dark .text-pink-600,
+.dark .text-pink-700,
+.dark .text-pink-400 {
+  color: #ec4899 !important;
 }
 
 /* Orgasmic animations and effects */
