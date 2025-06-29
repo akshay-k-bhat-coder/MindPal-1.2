@@ -22,6 +22,34 @@ export const useNetworkStatus = () => {
     }
   }
 
+  // Retry mechanism for async operations
+  const withRetry = async <T>(
+    operation: () => Promise<T>,
+    maxRetries: number = 3,
+    delay: number = 1000
+  ): Promise<T> => {
+    let lastError: Error
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await operation()
+      } catch (error) {
+        lastError = error as Error
+        console.warn(`Attempt ${attempt} failed:`, error)
+
+        // If this is the last attempt, throw the error
+        if (attempt === maxRetries) {
+          throw lastError
+        }
+
+        // Wait before retrying (exponential backoff)
+        await new Promise(resolve => setTimeout(resolve, delay * attempt))
+      }
+    }
+
+    throw lastError!
+  }
+
   // Handle online/offline events
   useEffect(() => {
     const handleOnline = () => {
@@ -64,6 +92,7 @@ export const useNetworkStatus = () => {
     isOnline,
     isSupabaseConnected,
     lastChecked,
-    checkConnection: checkSupabaseConnection
+    checkConnection: checkSupabaseConnection,
+    withRetry
   }
 }
