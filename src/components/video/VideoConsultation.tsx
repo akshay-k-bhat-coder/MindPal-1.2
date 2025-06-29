@@ -18,7 +18,9 @@ import {
   AlertCircle,
   CheckCircle,
   Monitor,
-  Camera
+  Camera,
+  ExternalLink,
+  Globe
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useSettings } from '../../hooks/useSettings';
@@ -49,11 +51,10 @@ export function VideoConsultation() {
   const [showSettings, setShowSettings] = useState(false);
   const [selectedPersonality, setSelectedPersonality] = useState(settings.ai_personality);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const aiVideoRef = useRef<HTMLVideoElement>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [mediaPermissionError, setMediaPermissionError] = useState<string | null>(null);
   const [showPermissionModal, setShowPermissionModal] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('disconnected');
+  const [sessionWindow, setSessionWindow] = useState<Window | null>(null);
 
   const maxSessionTime = 3600; // 60 minutes for all users
   const timeRemaining = Math.max(0, maxSessionTime - sessionDuration);
@@ -126,6 +127,21 @@ export function VideoConsultation() {
     };
   }, [isSessionActive]);
 
+  // Monitor session window
+  useEffect(() => {
+    if (sessionWindow && isSessionActive) {
+      const checkWindow = setInterval(() => {
+        if (sessionWindow.closed) {
+          // Session window was closed, end the session
+          handleEndSession();
+          setSessionWindow(null);
+        }
+      }, 1000);
+
+      return () => clearInterval(checkWindow);
+    }
+  }, [sessionWindow, isSessionActive]);
+
   const handleStartSession = async () => {
     if (!isOnline) {
       toast.error('Internet connection required for video consultation');
@@ -143,29 +159,32 @@ export function VideoConsultation() {
     }
 
     try {
-      setConnectionStatus('connecting');
       cleanupLocalStream();
       
       const replicaId = getReplicaId(selectedPersonality);
       const success = await startSession(replicaId, maxSessionTime);
       
-      if (success) {
-        setConnectionStatus('connected');
-        toast.success('Video consultation started!');
+      if (success && sessionData?.session_url) {
+        // Open the Tavus session in a new window/tab
+        const newWindow = window.open(
+          sessionData.session_url,
+          'tavus-video-session',
+          'width=1200,height=800,scrollbars=yes,resizable=yes,toolbar=no,menubar=no,location=no,status=no'
+        );
         
-        // Simulate AI video connection (in a real implementation, this would connect to Tavus)
-        if (aiVideoRef.current) {
-          // For demo purposes, we'll show a placeholder or use a different approach
-          // In production, you would integrate with Tavus WebRTC or use their SDK
-          console.log('AI video session started with session data:', sessionData);
+        if (newWindow) {
+          setSessionWindow(newWindow);
+          toast.success('Video consultation opened in new window!');
+          
+          // Focus the new window
+          newWindow.focus();
+        } else {
+          // Popup blocked, provide fallback
+          toast.error('Popup blocked! Please allow popups and try again, or click the link below.');
         }
-      } else {
-        setConnectionStatus('error');
-        initializeLocalVideo();
       }
     } catch (error) {
       console.error('Failed to start session:', error);
-      setConnectionStatus('error');
       toast.error('Failed to start video session');
       initializeLocalVideo();
     }
@@ -173,7 +192,12 @@ export function VideoConsultation() {
 
   const handleEndSession = async () => {
     try {
-      setConnectionStatus('disconnected');
+      // Close the session window if it's open
+      if (sessionWindow && !sessionWindow.closed) {
+        sessionWindow.close();
+        setSessionWindow(null);
+      }
+      
       await endSession();
       toast.success('Video consultation ended');
       setTimeout(() => {
@@ -192,6 +216,12 @@ export function VideoConsultation() {
     } catch (error) {
       console.error('Failed to clear lingering session:', error);
       toast.error('Failed to clear session. Please try again.');
+    }
+  };
+
+  const handleOpenSessionManually = () => {
+    if (sessionData?.session_url) {
+      window.open(sessionData.session_url, '_blank');
     }
   };
 
@@ -322,51 +352,53 @@ export function VideoConsultation() {
             animate={{ opacity: 1, scale: 1 }}
             className="bg-black rounded-2xl overflow-hidden aspect-video relative"
           >
-            {/* AI Video Area */}
+            {/* Session Status Display */}
             <div className="w-full h-full relative">
               {isSessionActive ? (
-                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-900 to-blue-900">
-                  {connectionStatus === 'connecting' && (
-                    <div className="text-center text-white">
-                      <motion.div
-                        className="w-16 h-16 border-4 border-white/30 border-t-white rounded-full mx-auto mb-4"
-                        animate={{ rotate: 360 }}
-                        transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                      />
-                      <p className="text-lg font-medium">Connecting to AI Companion...</p>
-                      <p className="text-sm opacity-75">Please wait while we establish the connection</p>
-                    </div>
-                  )}
-                  
-                  {connectionStatus === 'connected' && (
-                    <div className="text-center text-white">
-                      <motion.div
-                        initial={{ scale: 0 }}
-                        animate={{ scale: 1 }}
-                        className="w-32 h-32 bg-gradient-to-br from-purple-500 to-blue-500 rounded-full flex items-center justify-center mx-auto mb-4"
-                      >
-                        <User className="h-16 w-16 text-white" />
-                      </motion.div>
-                      <p className="text-lg font-medium">AI Companion Active</p>
-                      <p className="text-sm opacity-75">Your AI therapist is ready to help</p>
-                      <div className="mt-4 flex items-center justify-center space-x-2">
-                        <motion.div
-                          className="w-2 h-2 bg-green-400 rounded-full"
-                          animate={{ scale: [1, 1.2, 1] }}
-                          transition={{ duration: 1, repeat: Infinity }}
-                        />
-                        <span className="text-sm text-green-400">Connected</span>
+                <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-purple-900 to-blue-900 text-white p-8">
+                  <motion.div
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    className="text-center"
+                  >
+                    <motion.div
+                      className="w-24 h-24 bg-gradient-to-br from-green-500 to-blue-500 rounded-full flex items-center justify-center mx-auto mb-6"
+                      animate={{ scale: [1, 1.1, 1] }}
+                      transition={{ duration: 2, repeat: Infinity }}
+                    >
+                      <Globe className="h-12 w-12 text-white" />
+                    </motion.div>
+                    
+                    <h3 className="text-2xl font-bold mb-2">Session Active</h3>
+                    <p className="text-lg opacity-90 mb-4">
+                      Your AI consultation is running in a separate window
+                    </p>
+                    
+                    {sessionData?.session_url && (
+                      <div className="space-y-3">
+                        <button
+                          onClick={handleOpenSessionManually}
+                          className="bg-white/20 hover:bg-white/30 text-white px-6 py-3 rounded-xl font-medium transition-colors duration-200 flex items-center space-x-2 mx-auto"
+                        >
+                          <ExternalLink className="h-5 w-5" />
+                          <span>Open Session Window</span>
+                        </button>
+                        
+                        <p className="text-sm opacity-75">
+                          If the window didn't open automatically, click the button above
+                        </p>
                       </div>
+                    )}
+                    
+                    <div className="mt-6 flex items-center justify-center space-x-2">
+                      <motion.div
+                        className="w-3 h-3 bg-green-400 rounded-full"
+                        animate={{ scale: [1, 1.2, 1] }}
+                        transition={{ duration: 1, repeat: Infinity }}
+                      />
+                      <span className="text-sm text-green-400">Connected to Tavus</span>
                     </div>
-                  )}
-                  
-                  {connectionStatus === 'error' && (
-                    <div className="text-center text-white">
-                      <AlertCircle className="h-16 w-16 text-red-400 mx-auto mb-4" />
-                      <p className="text-lg font-medium">Connection Failed</p>
-                      <p className="text-sm opacity-75">Unable to connect to AI companion</p>
-                    </div>
-                  )}
+                  </motion.div>
                 </div>
               ) : (
                 <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-900 to-blue-900">
@@ -374,6 +406,7 @@ export function VideoConsultation() {
                     <Video className="h-16 w-16 mx-auto mb-4 opacity-50" />
                     <p className="text-lg font-medium">AI Companion Ready</p>
                     <p className="text-sm opacity-75">Start a session to begin video consultation</p>
+                    <p className="text-xs opacity-60 mt-2">Session will open in a new window</p>
                   </div>
                 </div>
               )}
@@ -424,11 +457,11 @@ export function VideoConsultation() {
               )}
             </div>
 
-            {/* Session Status */}
+            {/* External Link Indicator */}
             {isSessionActive && (
               <div className="absolute bottom-4 left-4 bg-black/50 backdrop-blur-sm text-white px-3 py-2 rounded-lg flex items-center space-x-2">
-                <CheckCircle className="h-4 w-4 text-green-400" />
-                <span className="text-sm">Session Active</span>
+                <ExternalLink className="h-4 w-4 text-blue-400" />
+                <span className="text-sm">External Window</span>
               </div>
             )}
           </motion.div>
@@ -568,7 +601,7 @@ export function VideoConsultation() {
                     ? 'text-green-600 dark:text-green-400' 
                     : 'text-gray-500 dark:text-gray-400'
                 }`}>
-                  {isSessionActive ? 'Active' : 'Inactive'}
+                  {isSessionActive ? 'Active (External Window)' : 'Inactive'}
                 </span>
               </div>
             </div>
@@ -583,6 +616,7 @@ export function VideoConsultation() {
           >
             <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-300 mb-3">Tips for Better Sessions</h3>
             <ul className="space-y-2 text-sm text-blue-800 dark:text-blue-400">
+              <li>• Session will open in a new window/tab</li>
               <li>• Ensure good lighting on your face</li>
               <li>• Use headphones for better audio quality</li>
               <li>• Find a quiet, private space</li>
